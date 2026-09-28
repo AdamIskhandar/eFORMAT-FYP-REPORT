@@ -19,7 +19,7 @@
 
 /* global Word */
 
-export const FIRST_CAPTION_CHAPTER = 3;
+export const FIRST_CAPTION_CHAPTER = 1;
 
 const FIRST_HEADING_BOOKMARK = "bmReportHeading_0"; // created by the TOC generator
 
