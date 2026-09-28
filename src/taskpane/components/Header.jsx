@@ -1,7 +1,7 @@
 import * as React from "react";
 import PropTypes from "prop-types";
 import { Image, tokens, makeStyles } from "@fluentui/react-components";
-import backgroundImage from "../../../assets/uptm3.jpg";
+import backgroundImage from "../../../assets/banner.png";
 
 const useStyles = makeStyles({
   welcome__header: {
@@ -22,15 +22,15 @@ const useStyles = makeStyles({
     top: 0,
     left: 0,
     width: "100%",
-    height: "100%",
+    height: "130px",
     backgroundImage: `url(${backgroundImage})`,
     backgroundRepeat: "no-repeat",
     backgroundPosition: "center",
     backgroundSize: "cover",
-    filter: "blur(4px)",
-    backgroundColor: "rgba(0,0,0,0.1)",
-    backgroundBlendMode: "darken",
-    zIndex: 0,
+    // filter: "blur(4px)",
+    // backgroundColor: "rgba(0,0,0,0.1)",
+    // backgroundBlendMode: "darken",
+    // zIndex: 0,
   },
   message: {
     fontSize: "clamp(1.2rem, 2vw + 0.5rem, 1.5rem)",
@@ -63,8 +63,9 @@ const Header = (props) => {
   return (
     <section className={styles.welcome__header}>
       <div className={styles.background}></div>
-      <Image width="300" src={logo} alt={title} className={styles.image} />
-      <h1 className={styles.message}>{message}</h1>
+      {/* <Image width="300" src={logo} alt={title} className={styles.image} /> */}
+      {/* <h1 className={styles.message}>{message}</h1> */}
+      <br />
     </section>
   );
 };
