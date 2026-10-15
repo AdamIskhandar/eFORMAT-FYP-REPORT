@@ -1,30 +1,35 @@
 import React from "react";
-import { makeStyles } from "@fluentui/react-components";
+import { makeStyles, tokens, Text } from "@fluentui/react-components";
+import { StepBody, SubHeading } from "./ui/StepUI";
 
 const useStyles = makeStyles({
-  HardCoverWrapper: {
-    paddingLeft: "10px",
+  row: {
+    display: "flex",
+    alignItems: "center",
+    gap: "12px",
   },
-  heading: {
-    color: "white",
-    fontSize: "20px",
+  swatch: {
+    width: "36px",
+    height: "36px",
+    borderRadius: tokens.borderRadiusMedium,
+    backgroundColor: "#0B1F4B",
+    border: `1px solid ${tokens.colorNeutralStroke1}`,
+    flexShrink: 0,
   },
-  paragprahp: {
-    paddingLeft: "25px",
-    fontSize: "15px",
+  name: {
+    fontWeight: tokens.fontWeightSemibold,
   },
 });
 
 export default function HardCoverColour() {
   const styles = useStyles();
   return (
-    <>
-      <div className={styles.HardCoverWrapper}>
-        <h2 className={styles.heading}>Hard Cover Colour</h2>
-        <div>
-          <p className={styles.paragprahp}>Dark Blue</p>
-        </div>
+    <StepBody>
+      <SubHeading>Hard Cover Colour</SubHeading>
+      <div className={styles.row}>
+        <span className={styles.swatch} aria-hidden="true" />
+        <Text className={styles.name}>Dark Blue</Text>
       </div>
-    </>
+    </StepBody>
   );
 }

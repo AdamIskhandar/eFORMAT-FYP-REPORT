@@ -9,6 +9,10 @@
  * are resolved against the Figure_N / Table_N bookmarks that module creates.
  */
 
+import { numberToBookmark, bookmarkToNumber } from "./word-caption-utils";
+
+/* global Word */
+
 const REF_CONFIG = {
   figure: { label: "Figure", bookmarkPrefix: "Figure_" },
   table: { label: "Table", bookmarkPrefix: "Table_" },
@@ -25,23 +29,23 @@ function getConfig(type) {
  * (or all bookmarks in the document if no type given), sorted by number.
  */
 export async function listBookmarks(context, type = null) {
-  if (!context.document.bookmarks) {
-    throw new Error("Bookmarks collection is not available on this Word host/API version.");
-  }
-
-  context.document.bookmarks.load("items");
+  const all = context.document.body.getRange("Whole").getBookmarks(true, true);
   await context.sync();
-
-  let names = context.document.bookmarks.items.map((b) => b.name);
+  let names = all.value;
 
   if (type) {
-    const { bookmarkPrefix } = getConfig(type);
+    // Caption bookmarks only, in number order: Figure_2_1 < Figure_2_2 < Figure_3_1.
+    const parts = (n) => bookmarkToNumber(type, n).split(".").map(Number);
     names = names
-      .filter((n) => n.startsWith(bookmarkPrefix))
+      .filter((n) => bookmarkToNumber(type, n) !== null)
       .sort((a, b) => {
-        const na = parseInt(a.replace(bookmarkPrefix, ""), 10);
-        const nb = parseInt(b.replace(bookmarkPrefix, ""), 10);
-        return na - nb;
+        const pa = parts(a);
+        const pb = parts(b);
+        for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+          const d = (pa[i] || 0) - (pb[i] || 0);
+          if (d !== 0) return d;
+        }
+        return 0;
       });
   }
 
@@ -70,8 +74,8 @@ export async function deleteBookmark(context, bookmarkName) {
  * to the caption's bookmark. Throws if the caption doesn't exist yet.
  */
 export async function insertReference(context, type, number, prefixText = "") {
-  const { label, bookmarkPrefix } = getConfig(type);
-  const bookmarkName = `${bookmarkPrefix}${number}`;
+  const { label } = getConfig(type);
+  const bookmarkName = numberToBookmark(type, number);
 
   const target = context.document.getBookmarkRangeOrNullObject(bookmarkName);
   target.load("isNullObject");
@@ -118,36 +122,37 @@ export async function navigateToBookmark(context, bookmarkName) {
 
 /**
  * Keeps existing inline references in sync after renumberCaptions() runs.
- * Pass the numberMap it returns. Searches for reference runs carrying a
- * hyperlink to the old bookmark and updates their visible text/link.
- * Processes highest-old-number first to avoid double-replacing collisions
- * (e.g. renumbering 2->1 and 1->2 in the same pass).
+ * Pass the numberMap it returns ({ "2": "3.1", ... }). References are the
+ * blue "Figure 2" links pointing at #Figure_2; each is changed to the new
+ * number and link. All references are found BEFORE any is changed, so
+ * swaps (2 -> 3 and 3 -> 2 in one pass) can't be applied twice.
  */
 export async function updateReferencesAfterRenumber(context, type, numberMap) {
-  const { label, bookmarkPrefix } = getConfig(type);
+  const { label } = getConfig(type);
   const body = context.document.body;
 
-  const oldNumbers = Object.keys(numberMap)
-    .map(Number)
-    .sort((a, b) => b - a);
+  const changed = Object.keys(numberMap).filter((oldNumber) => oldNumber !== numberMap[oldNumber]);
+  if (changed.length === 0) return 0;
 
-  for (const oldNumber of oldNumbers) {
-    const newNumber = numberMap[oldNumber];
-    if (oldNumber === newNumber) continue;
+  const searches = changed.map((oldNumber) => {
+    const res = body.search(`${label} ${oldNumber}`, { matchCase: false });
+    res.load("items/hyperlink");
+    return { oldNumber, res };
+  });
+  await context.sync();
 
-    const oldBookmark = `${bookmarkPrefix}${oldNumber}`;
-    const newBookmark = `${bookmarkPrefix}${newNumber}`;
-
-    const searchResults = body.search(`${label} ${oldNumber}`, { matchWholeWord: true });
-    searchResults.load("items/hyperlink");
-    await context.sync();
-
-    searchResults.items.forEach((r) => {
-      if (r.hyperlink === `#${oldBookmark}`) {
-        r.insertText(`${label} ${newNumber}`, Word.InsertLocation.replace);
-        r.hyperlink = `#${newBookmark}`;
-      }
+  const edits = [];
+  searches.forEach(({ oldNumber, res }) => {
+    const oldLink = `#${numberToBookmark(type, oldNumber)}`;
+    res.items.forEach((r) => {
+      if (r.hyperlink === oldLink) edits.push({ r, newNumber: numberMap[oldNumber] });
     });
-    await context.sync();
-  }
+  });
+
+  edits.forEach(({ r, newNumber }) => {
+    const updated = r.insertText(`${label} ${newNumber}`, Word.InsertLocation.replace);
+    updated.hyperlink = `#${numberToBookmark(type, newNumber)}`;
+  });
+  await context.sync();
+  return edits.length;
 }

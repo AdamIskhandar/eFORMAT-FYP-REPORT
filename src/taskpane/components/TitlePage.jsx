@@ -1,130 +1,112 @@
 import React, { useState, useEffect } from "react";
-import {
-  makeStyles,
-  useId,
-  Dropdown,
-  Option,
-  Button,
-  Input,
-  Text,
-} from "@fluentui/react-components";
-import { isMarginFlagSet, applyUniformMargin } from "./Section/utils/margin";
+import { useId, Dropdown, Option, Button, Input, Field, Badge } from "@fluentui/react-components";
+import { LockClosed16Regular } from "@fluentui/react-icons";
+import { isReportMarginSet, applyUniformMargin } from "./Section/utils/margin";
+import { StepBody, Hint, SubHeading, Actions, Status, Notice } from "./ui/StepUI";
 
 /* global Word */
 
-const useStyles = makeStyles({
-  InsideCoverWrapper: {
-    paddingLeft: "10px",
-  },
-  heading: {
-    color: "white",
-    fontSize: "20px",
-  },
-  label: {
-    marginBottom: "10px",
-  },
-  contentInsideCover: {
-    paddingLeft: "25px",
-  },
-  button: {
-    marginTop: "10px",
-  },
-  wrapButton: {
-    display: "flex",
-    justifyContent: "flex-start",
-  },
-  wrapButtonFormat: {
-    display: "flex",
-    justifyContent: "flex-end",
-    marginRight: "40px",
-    maxWidth: "250px",
-    minWidth: "250px",
-  },
-  status: {
-    display: "block",
-    marginTop: "6px",
-    color: "#9fd89f",
-  },
-  inputRow: {
-    marginBottom: "10px",
-  },
-});
+// Title Page layout, matching the UPTM sample (first page of section 3):
+//   UNIVERSITI POLY-TECH MALAYSIA      Arial Bold 18 - first line
+//   Faculty of Computing & Multimedia  Arial Bold 15 - second line
+//   PROJECT TITLE                      Arial Bold 16 - red, centre of page
+//   STUDENT'S FULL NAME / STUDENT ID   Arial Bold 16 - red
+//   COURSE CODE (e.g. FYP4025)         Arial Bold 16 - red, near the bottom
+//   MONTH YEAR (e.g. NOVEMBER 2025)    Arial Bold 16 - last line
+// Vertical position comes from spacingBefore (points). The total is kept
+// about 100pt under one page at the section 3 margin, so a title that wraps
+// onto a second line still fits on the page.
+const RED = "#FF0000";
+const BLACK = "#000000";
 
 const FORMAT_FIELDS = [
   {
-    id: "titleOfReport",
-    label: "Title of Report",
-    bookmark: "bmTitleOfReport",
+    id: "university",
+    label: "Name of University",
+    bookmark: "bmTpUniversity",
     order: 1,
-    fontSize: 12,
-    spacingBefore: 85,
+    defaultText: "UNIVERSITI POLY-TECH MALAYSIA",
+    fontSize: 18,
+    allCaps: true,
+    spacingBefore: 30,
     spacingAfter: 0,
-    color: "#000000",
-  },
-  {
-    id: "fullName",
-    label: "Full Name of Student",
-    bookmark: "bmFullName",
-    order: 2,
-    fontSize: 12,
-    spacingBefore: 113.4,
-    spacingAfter: 0,
-    color: "#000000",
-  },
-  {
-    id: "purpose",
-    label: "Purpose of submission of Report",
-    bookmark: "bmPurpose",
-    order: 3,
-    fontSize: 12,
-    spacingBefore: 113.4,
-    spacingAfter: 0,
-    color: "#000000",
+    color: BLACK,
   },
   {
     id: "faculty",
     label: "Faculty",
-    bookmark: "bmFaculty",
+    bookmark: "bmTpFaculty",
+    order: 2,
+    defaultText: "Faculty of Computing & Multimedia",
+    fontSize: 15,
+    allCaps: false,
+    spacingBefore: 0,
+    spacingAfter: 0,
+    color: BLACK,
+  },
+  {
+    id: "projectTitle",
+    label: "Project Title",
+    bookmark: "bmTpProjectTitle",
+    order: 3,
+    defaultText: "PROJECT TITLE",
+    fontSize: 16,
+    allCaps: true,
+    spacingBefore: 180,
+    spacingAfter: 0,
+    color: RED,
+  },
+  {
+    id: "fullName",
+    label: "Student's Full Name",
+    bookmark: "bmTpFullName",
     order: 4,
-    fontSize: 12,
-    spacingBefore: 85,
+    defaultText: "STUDENT'S FULL NAME",
+    fontSize: 16,
+    allCaps: true,
+    spacingBefore: 50,
     spacingAfter: 0,
-    color: "#000000",
+    color: RED,
   },
   {
-    id: "university",
-    label: "Name of University",
-    bookmark: "bmUniversity",
+    id: "studentId",
+    label: "Student ID",
+    bookmark: "bmTpStudentId",
     order: 5,
-    fontSize: 12,
+    defaultText: "STUDENT ID",
+    fontSize: 16,
+    allCaps: true,
     spacingBefore: 0,
     spacingAfter: 0,
-    color: "#000000",
+    color: RED,
   },
   {
-    id: "campus",
-    label: "Name of campus where candidate is registered",
-    bookmark: "bmCampus",
+    id: "courseCode",
+    label: "Course Code (e.g. FYP4025)",
+    bookmark: "bmTpCourseCode",
     order: 6,
-    fontSize: 12,
-    spacingBefore: 0,
+    defaultText: "COURSE CODE",
+    fontSize: 16,
+    allCaps: true,
+    spacingBefore: 190,
     spacingAfter: 0,
-    color: "#000000",
+    color: RED,
   },
   {
-    id: "year",
-    label: "Year in which thesis is submitted to the university for examination",
-    bookmark: "bmYear",
+    id: "monthYear",
+    label: "Month & Year of Submission (e.g. NOVEMBER 2025)",
+    bookmark: "bmTpMonthYear",
     order: 7,
-    fontSize: 12,
-    spacingBefore: 56.7,
-    spacingAfter: 42.5,
-    color: "#000000",
+    defaultText: "MONTH YEAR",
+    fontSize: 16,
+    allCaps: true,
+    spacingBefore: 14,
+    spacingAfter: 0,
+    color: BLACK,
   },
 ];
 
 export default function TitlePage() {
-  const styles = useStyles();
   const dropdownId = useId("dropdown");
 
   const [selectedFieldId, setSelectedFieldId] = useState(null);
@@ -133,10 +115,12 @@ export default function TitlePage() {
   const [formatStatus, setFormatStatus] = useState("");
   const [marginIsSet, setMarginIsSet] = useState(false);
 
-  // Reflects the persisted flag on mount, so reloading the add-in doesn't
-  // force a redundant "Set Margin" click if it's already been done.
+  // Reads section 3's real margins on load, so the Format controls unlock if
+  // the margin is already in place (and stay locked if it was undone).
   useEffect(() => {
-    setMarginIsSet(isMarginFlagSet());
+    Word.run(async (context) => {
+      setMarginIsSet(await isReportMarginSet(context));
+    }).catch(() => {});
   }, []);
 
   function getFormatData(_, data) {
@@ -148,40 +132,87 @@ export default function TitlePage() {
   // ---- Margin: single source of truth for the whole document, set once ----
 
   async function applyMostFrontCoverMargin() {
-    if (isMarginFlagSet()) {
-      setMarginStatus("The margin was set.");
-      setMarginIsSet(true);
-      return;
+    try {
+      await Word.run(async (context) => {
+        // Check the document itself, not a saved flag - so this works again
+        // after the margin is undone with Ctrl+Z.
+        if (await isReportMarginSet(context)) {
+          setMarginStatus("The margin was set.");
+          setMarginIsSet(true);
+          return;
+        }
+        await applyUniformMargin(context);
+        setMarginStatus("Margin has been set for section 3 (Title Page onward).");
+        setMarginIsSet(true);
+      });
+    } catch (err) {
+      console.error(err);
+      setMarginStatus(err.message || "Could not set the margin.");
     }
-
-    await Word.run(async (context) => {
-      await applyUniformMargin(context);
-    });
-
-    setMarginStatus("Margin has been set for the whole document.");
-    setMarginIsSet(true);
   }
 
   // ---- Format / auto-placement ----
 
-  async function ensureSkeleton(context) {
-    const marker = context.document.getBookmarkRangeOrNullObject(FORMAT_FIELDS[0].bookmark);
+  // The Title Page always lives on the FIRST page of section 3. Sections 1
+  // and 2 are the Front Cover, and section 3's later pages are the report.
+  async function getTitlePageSection(context) {
+    const sections = context.document.sections;
+    sections.load("items");
     await context.sync();
-    if (!marker.isNullObject) return;
+    if (sections.items.length < 3) {
+      throw new Error(
+        "Generate the Front Cover first. The Title Page can only go on the first page of section 3."
+      );
+    }
+    return sections.items[2];
+  }
 
+  async function ensureSkeleton(context) {
+    const section = await getTitlePageSection(context);
+
+    const marker = context.document.getBookmarkRangeOrNullObject(FORMAT_FIELDS[0].bookmark);
+    marker.load("isNullObject");
+    await context.sync();
+
+    if (!marker.isNullObject) {
+      // Already built - make sure it's really in section 3 (an older version
+      // of this add-in appended it to the end of the document instead).
+      const where = marker.compareLocationWith(section.body.getRange("Whole"));
+      await context.sync();
+      const inside = ["Inside", "InsideStart", "InsideEnd", "Equal"].includes(where.value);
+      if (!inside) {
+        throw new Error(
+          "The Title Page text is outside the first page of section 3. Delete it, then click Set Format again."
+        );
+      }
+      return;
+    }
+
+    // Built at the START of section 3, top to bottom, then a page break so
+    // anything after the Title Page starts on the next page.
     const ordered = [...FORMAT_FIELDS].sort((a, b) => a.order - b.order);
-    ordered.forEach((field) => {
-      const paragraph = context.document.body.insertParagraph("", Word.InsertLocation.end);
+    let cursor = null;
+    ordered.forEach((field, i) => {
+      const text = field.defaultText || "";
+      const paragraph =
+        i === 0
+          ? section.body.insertParagraph(text, Word.InsertLocation.start)
+          : cursor.insertParagraph(text, Word.InsertLocation.after);
       paragraph.font.name = "Arial";
       paragraph.font.bold = true;
+      paragraph.font.italic = false;
       paragraph.font.size = field.fontSize;
-      paragraph.font.allCaps = true;
+      paragraph.font.allCaps = field.allCaps;
       paragraph.font.color = field.color;
       paragraph.alignment = "Centered";
       paragraph.spaceBefore = field.spacingBefore;
       paragraph.spaceAfter = field.spacingAfter;
-      paragraph.getRange().insertBookmark(field.bookmark);
+      // Bookmark the text only (not the paragraph mark), so replacing it
+      // later can never merge this line into the next one.
+      paragraph.getRange("Content").insertBookmark(field.bookmark);
+      cursor = paragraph;
     });
+    cursor.insertBreak(Word.BreakType.page, Word.InsertLocation.after);
 
     await context.sync();
   }
@@ -197,75 +228,87 @@ export default function TitlePage() {
     }
     const field = FORMAT_FIELDS.find((f) => f.id === selectedFieldId);
 
-    await Word.run(async (context) => {
-      await ensureSkeleton(context);
+    try {
+      await Word.run(async (context) => {
+        await ensureSkeleton(context);
 
-      const bookmarkRange = context.document.getBookmarkRangeOrNullObject(field.bookmark);
-      await context.sync();
-      if (bookmarkRange.isNullObject) {
-        setFormatStatus("Could not find that field's placeholder. Try again.");
-        return;
-      }
+        const bookmarkRange = context.document.getBookmarkRangeOrNullObject(field.bookmark);
+        bookmarkRange.load("isNullObject");
+        await context.sync();
+        if (bookmarkRange.isNullObject) {
+          setFormatStatus("Could not find that field's placeholder. Try again.");
+          return;
+        }
 
-      bookmarkRange.insertText(fieldText.trim(), Word.InsertLocation.replace);
-      await context.sync();
+        // Replace only the line's text (keeps its paragraph mark and position),
+        // style the new text, then re-attach the bookmark to it so the same
+        // field can be updated again later.
+        const paragraph = bookmarkRange.paragraphs.getFirst();
+        const newText = paragraph
+          .getRange("Content")
+          .insertText(fieldText.trim(), Word.InsertLocation.replace);
+        newText.font.name = "Arial";
+        newText.font.bold = true;
+        newText.font.italic = false;
+        newText.font.size = field.fontSize;
+        newText.font.allCaps = field.allCaps;
+        newText.font.color = field.color;
+        paragraph.alignment = "Centered";
+        paragraph.spaceBefore = field.spacingBefore;
+        paragraph.spaceAfter = field.spacingAfter;
+        newText.insertBookmark(field.bookmark);
+        await context.sync();
 
-      const updatedRange = context.document.getBookmarkRangeOrNullObject(field.bookmark);
-      updatedRange.font.name = "Arial";
-      updatedRange.font.bold = true;
-      updatedRange.font.size = field.fontSize;
-      updatedRange.font.allCaps = true;
-      updatedRange.font.color = field.color;
-      updatedRange.paragraphs.load("items");
-      await context.sync();
-
-      updatedRange.paragraphs.items.forEach((p) => {
-        p.alignment = "Centered";
-        p.spaceBefore = field.spacingBefore;
-        p.spaceAfter = field.spacingAfter;
+        setFormatStatus(`Inserted into: ${field.label}`);
       });
-      await context.sync();
 
-      setFormatStatus(`Inserted into: ${field.label}`);
-    });
-
-    setFieldText("");
+      setFieldText("");
+    } catch (err) {
+      console.error(err);
+      setFormatStatus(err.message || "Could not set the format.");
+    }
   }
 
+  // Message colours: the success texts are fixed; anything else is a
+  // reminder (missing input) or an error from Word.
+  const marginTone = /^(Margin has been set|The margin was set)/.test(marginStatus)
+    ? "success"
+    : "error";
+  const formatTone = formatStatus.startsWith("Inserted into")
+    ? "success"
+    : /first\.$/.test(formatStatus)
+      ? "warning"
+      : "error";
+
   return (
-    <div className={styles.InsideCoverWrapper}>
-      <h2 className={styles.heading}>1) Title Page</h2>
+    <StepBody>
+      <SubHeading>
+        Margin {marginIsSet && <Badge appearance="tint" color="success" size="small">Set</Badge>}
+      </SubHeading>
+      <Hint>Sets the report margin (1&quot; / 1.2&quot; / 1.52&quot; / 1.2&quot;) from the Title Page onward.</Hint>
+      <Actions stretch>
+        <Button appearance={marginIsSet ? "secondary" : "primary"} onClick={applyMostFrontCoverMargin}>
+          {marginIsSet ? "Margin Set" : "Set Margin"}
+        </Button>
+      </Actions>
+      <Status text={marginStatus} tone={marginTone} />
 
-      <div className={styles.contentInsideCover}>
-        <p className={styles.label}>Set Margin (applies once, to the whole document)</p>
-        <div className={styles.wrapButton}>
-          <Button shape="circular" onClick={applyMostFrontCoverMargin}>
-            Set Margin
-          </Button>
-        </div>
-        {marginStatus && <Text className={styles.status}>{marginStatus}</Text>}
+      <SubHeading>Title Page text</SubHeading>
+      <Notice tone="info">
+        The Title Page always goes on the first page of section 3 (right after the cover). It
+        can&apos;t be added to the cover pages or to later pages.
+      </Notice>
+      {!marginIsSet && (
+        <Hint>
+          <LockClosed16Regular style={{ verticalAlign: "text-bottom" }} /> Set the margin above
+          first to unlock this part.
+        </Hint>
+      )}
 
-        <p className={styles.label} style={{ marginTop: 16 }}>
-          Type the text, then choose what it is:
-        </p>
-        {!marginIsSet && (
-          <Text className={styles.status} style={{ color: "#e0a458" }}>
-            Set the margin above first to unlock formatting.
-          </Text>
-        )}
-        <div className={styles.inputRow}>
-          <Input
-            placeholder="e.g. MPP INFORMATION APP"
-            value={fieldText}
-            onChange={(_, data) => setFieldText(data.value)}
-            style={{ width: "100%" }}
-            disabled={!marginIsSet}
-          />
-        </div>
-
+      <Field label="1. Choose the line">
         <Dropdown
           id={`${dropdownId}-format`}
-          placeholder="Select the format"
+          placeholder="Select the line to fill"
           value={selectedFieldId ? FORMAT_FIELDS.find((f) => f.id === selectedFieldId).label : ""}
           onOptionSelect={getFormatData}
           disabled={!marginIsSet}
@@ -276,18 +319,23 @@ export default function TitlePage() {
             </Option>
           ))}
         </Dropdown>
-        <div className={styles.wrapButtonFormat}>
-          <Button
-            className={styles.button}
-            shape="circular"
-            onClick={applyMostFrontCoverFormat}
-            disabled={!marginIsSet}
-          >
-            Set Format
-          </Button>
-        </div>
-        {formatStatus && <Text className={styles.status}>{formatStatus}</Text>}
-      </div>
-    </div>
+      </Field>
+
+      <Field label="2. Type the text">
+        <Input
+          placeholder="e.g. MPP INFORMATION APP"
+          value={fieldText}
+          onChange={(_, data) => setFieldText(data.value)}
+          disabled={!marginIsSet}
+        />
+      </Field>
+
+      <Actions>
+        <Button appearance="primary" onClick={applyMostFrontCoverFormat} disabled={!marginIsSet}>
+          Set Format
+        </Button>
+      </Actions>
+      <Status text={formatStatus} tone={formatTone} />
+    </StepBody>
   );
 }

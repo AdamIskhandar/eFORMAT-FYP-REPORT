@@ -1,34 +1,22 @@
 import React, { useState } from "react";
-import { makeStyles, Button, Input, Text, Field } from "@fluentui/react-components";
+import { makeStyles, tokens, Button, Input, Text, Field } from "@fluentui/react-components";
+import { StepBody, Hint, Actions, Status } from "../ui/StepUI";
 
 /* global Word */
 
 const useStyles = makeStyles({
-  ContentWrapper: {
-    paddingLeft: "10px",
-  },
-  heading: {
-    color: "white",
-    fontSize: "20px",
-  },
-  AbstractWrapper: {
-    paddingLeft: "25px",
-    display: "flex",
-    flexDirection: "column",
-    gap: "10px",
-  },
-  description: {
-    color: "#c7c7c7",
-    marginBottom: "5px",
+  previewLabel: {
+    fontSize: tokens.fontSizeBase200,
+    fontWeight: tokens.fontWeightSemibold,
+    color: tokens.colorNeutralForeground2,
   },
   previewBox: {
-    border: "1px solid #4a4a4a",
-    borderRadius: "4px",
+    border: `1px solid ${tokens.colorNeutralStroke2}`,
+    borderRadius: tokens.borderRadiusMedium,
     padding: "16px",
-    marginBottom: "14px",
     maxHeight: "250px",
     overflowY: "auto",
-    backgroundColor: "#2b2b2b",
+    backgroundColor: tokens.colorNeutralBackground3,
   },
   previewHeading: {
     display: "block",
@@ -36,14 +24,12 @@ const useStyles = makeStyles({
     fontWeight: "bold",
     letterSpacing: "1px",
     marginBottom: "14px",
-    color: "#ffffff",
   },
   previewTitle: {
     display: "block",
     textAlign: "center",
     fontWeight: "bold",
     marginBottom: "14px",
-    color: "#ffffff",
     textTransform: "uppercase",
   },
   previewParagraph: {
@@ -51,31 +37,13 @@ const useStyles = makeStyles({
     textAlign: "justify",
     fontSize: "12px",
     lineHeight: "1.2",
-    color: "#d6d6d6",
-  },
-  wrapButtonSize: {
-    display: "flex",
-    justifyContent: "flex-end",
-    marginRight: "40px",
-  },
-  button: {
-    marginTop: "10px",
-  },
-  statusSuccess: {
-    display: "block",
-    marginTop: "6px",
-    color: "#9fd89f",
-  },
-  statusError: {
-    display: "block",
-    marginTop: "6px",
-    color: "#ff8080",
+    color: tokens.colorNeutralForeground2,
   },
 });
 
-// 1 mm = 2.834645669 points
+// Same constants as Acknowledgements.jsx, so both headings sit the same way.
 const MM_TO_PT = 2.834645669;
-const HEADING_TOP_SPACING_MM = 30;
+const HEADING_TOP_SPACING_MM = 0;
 
 // Standard sample academic abstract content (~220 words)
 const SAMPLE_ABSTRACT_CONTENT =
@@ -87,77 +55,146 @@ export default function Abstract() {
   const [thesisTitle, setThesisTitle] = useState("");
   const [status, setStatus] = useState(null); // { type: "success" | "error", message: string }
 
+  // Same structure as ensureSkeleton() in Acknowledgements.jsx:
+  // reset vertical alignment, empty line, heading, (title), content, page break.
   async function ensureSkeleton(context) {
-    // Check if the Abstract page has already been generated
     const marker = context.document.getBookmarkRangeOrNullObject("bmAbstractHead");
+    marker.load("isNullObject");
     await context.sync();
     if (!marker.isNullObject) return false;
 
-    // Create a new page section break after Acknowledgements
-    // context.document.body.insertBreak(Word.BreakType.nextPage, Word.InsertLocation.end);
+    const sectionsBefore = context.document.sections;
+    sectionsBefore.load("items");
     await context.sync();
-
-    // Reset this section layout to normal top alignment
-    const currentSections = context.document.sections;
-    currentSections.load("items");
-    await context.sync();
-    const abstractSection = currentSections.items[currentSections.items.length - 1];
+    const abstractSection = sectionsBefore.items[sectionsBefore.items.length - 1];
 
     try {
+      // Same as Acknowledgements: keep this section at Top vertical alignment.
       abstractSection.pageSetup.verticalAlignment = "Top";
       await context.sync();
-    } catch (e) {
-      console.warn("Vertical alignment configuration unsupported by this Word host.", e);
+    } catch (vAlignError) {
+      console.warn(
+        "Section vertical alignment is not supported in this Word version/host.",
+        vAlignError
+      );
     }
 
-    // 1. Insert ABSTRACT Heading (30mm from top of page)
+    // 0. Empty line above the heading. On the Acknowledgements page the
+    //    heading also has one empty line above it (left over at the end of
+    //    the document), which is what gives it that space at the top. Copy
+    //    that line's size and spacing so ABSTRACT sits at exactly the same
+    //    height; if it can't be found, use a plain 12pt Arial empty line.
+    const spacer = context.document.body.insertParagraph("", Word.InsertLocation.end);
+    spacer.font.name = "Arial";
+    spacer.font.size = 12;
+    spacer.font.bold = false;
+    spacer.alignment = "Centered";
+    spacer.spaceBefore = 0;
+    spacer.spaceAfter = 0;
+
+    const ackHead = context.document.getBookmarkRangeOrNullObject("bmAckHead");
+    ackHead.load("isNullObject");
+    await context.sync();
+    if (!ackHead.isNullObject) {
+      const lineAboveAck = ackHead.paragraphs.getFirst().getPreviousOrNullObject();
+      lineAboveAck.load("isNullObject,text,lineSpacing,spaceBefore,spaceAfter,font/name,font/size");
+      await context.sync();
+      if (!lineAboveAck.isNullObject && lineAboveAck.text.trim() === "") {
+        spacer.font.name = lineAboveAck.font.name;
+        spacer.font.size = lineAboveAck.font.size;
+        spacer.lineSpacing = lineAboveAck.lineSpacing;
+        spacer.spaceBefore = lineAboveAck.spaceBefore;
+        spacer.spaceAfter = lineAboveAck.spaceAfter;
+      }
+    }
+
+    // 1. Heading - same settings as the ACKNOWLEDGEMENTS heading
     const heading = context.document.body.insertParagraph("ABSTRACT", Word.InsertLocation.end);
     heading.font.name = "Arial";
+    heading.alignment = "Centered";
     heading.font.size = 12;
     heading.font.bold = true;
     heading.font.allCaps = true;
-    heading.alignment = "Centered";
-    heading.spaceBefore = HEADING_TOP_SPACING_MM * MM_TO_PT; // 30 mm spacing
-    heading.spaceAfter = 18; // Gap before the title block
+    heading.spaceBefore = HEADING_TOP_SPACING_MM * MM_TO_PT;
+    heading.spaceAfter = 18;
+    heading.lineSpacing = 12;
     heading.getRange().insertBookmark("bmAbstractHead");
 
-    // 2. Insert Thesis Title Block (Centered, bold, uppercase)
-    const titleParagraph = context.document.body.insertParagraph("", Word.InsertLocation.end);
-    titleParagraph.font.name = "Arial";
-    titleParagraph.font.size = 12;
-    titleParagraph.font.bold = true;
-    titleParagraph.font.allCaps = true;
-    titleParagraph.alignment = "Centered";
-    titleParagraph.spaceBefore = 0;
-    titleParagraph.spaceAfter = 18; // Gap before content paragraph
-    titleParagraph.getRange().insertBookmark("bmAbstractTitle");
+    // 2. Thesis title (Abstract only - centred, bold, caps)
+    const title = context.document.body.insertParagraph("", Word.InsertLocation.end);
+    title.font.name = "Arial";
+    title.font.size = 12;
+    title.font.bold = true;
+    title.font.allCaps = true;
+    title.alignment = "Centered";
+    title.spaceBefore = 0;
+    title.spaceAfter = 18;
+    title.lineSpacing = 12;
+    title.getRange().insertBookmark("bmAbstractTitle");
 
-    // 3. Insert Abstract Content Paragraph (Justified, Single-spaced)
-    const contentParagraph = context.document.body.insertParagraph(
+    // 3. Content - same style as the Acknowledgements content, but single
+    //    spaced (lineSpacing 12) because the Abstract is single-spaced.
+    const content = context.document.body.insertParagraph(
       SAMPLE_ABSTRACT_CONTENT,
       Word.InsertLocation.end
     );
-    contentParagraph.font.name = "Arial";
-    contentParagraph.font.size = 12;
-    contentParagraph.font.bold = false;
-    contentParagraph.font.allCaps = false;
-    contentParagraph.alignment = "Justified";
-    contentParagraph.spaceBefore = 0;
-    contentParagraph.spaceAfter = 0;
-    contentParagraph.lineSpacing = 12; // Single spacing (12 points font size = 12 point line space)
-    contentParagraph.getRange().insertBookmark("bmAbstractContent");
+    content.font.name = "Arial";
+    content.font.size = 12;
+    content.font.bold = false;
+    content.font.allCaps = false;
+    content.alignment = "Justified";
+    content.spaceBefore = 0;
+    content.spaceAfter = 0;
+    content.lineSpacing = 12;
+    content.getRange().insertBookmark("bmAbstractContent");
 
     await context.sync();
+
+    // 4. End the page, same as Acknowledgements, so the next page starts clean.
+    context.document.body.insertBreak(Word.BreakType.page, Word.InsertLocation.end);
+    await context.sync();
+
     return true;
   }
 
-  async function updateField(context, bookmark, text) {
-    if (!text.trim()) return;
+  // Same idea as fillField() in Acknowledgements.jsx: every click re-applies
+  // the formatting, so the page always matches even if it was edited.
+  async function fillField(context, bookmark, text) {
     const range = context.document.getBookmarkRangeOrNullObject(bookmark);
+    range.load("isNullObject");
     await context.sync();
     if (range.isNullObject) return;
 
-    range.insertText(text.trim().toUpperCase(), Word.InsertLocation.replace);
+    const paragraph = range.paragraphs.getFirst();
+    if (text && text.trim()) {
+      paragraph.getRange("Content").insertText(text.trim(), Word.InsertLocation.replace);
+    }
+    paragraph.font.name = "Arial";
+    paragraph.font.size = 12;
+
+    if (bookmark === "bmAbstractHead" || bookmark === "bmAbstractTitle") {
+      paragraph.font.bold = true;
+      paragraph.font.allCaps = true;
+      paragraph.alignment = "Centered";
+      paragraph.spaceBefore = bookmark === "bmAbstractHead" ? HEADING_TOP_SPACING_MM * MM_TO_PT : 0;
+      paragraph.spaceAfter = 18;
+      paragraph.lineSpacing = 12;
+    } else {
+      // The content can be several paragraphs (each \n starts a new one).
+      const paragraphs = range.paragraphs;
+      paragraphs.load("items");
+      await context.sync();
+      paragraphs.items.forEach((p) => {
+        p.font.name = "Arial";
+        p.font.size = 12;
+        p.font.bold = false;
+        p.font.allCaps = false;
+        p.alignment = "Justified";
+        p.spaceBefore = 0;
+        p.spaceAfter = 0;
+        p.lineSpacing = 12;
+      });
+    }
     await context.sync();
   }
 
@@ -172,8 +209,10 @@ export default function Abstract() {
       await Word.run(async (context) => {
         const created = await ensureSkeleton(context);
 
-        // Populate or update the title bookmark
-        await updateField(context, "bmAbstractTitle", thesisTitle);
+        await fillField(context, "bmAbstractHead", "ABSTRACT");
+        await fillField(context, "bmAbstractTitle", thesisTitle);
+        // Content keeps whatever the student wrote - only the format is reset.
+        await fillField(context, "bmAbstractContent", "");
 
         setStatus({
           type: "success",
@@ -193,50 +232,35 @@ export default function Abstract() {
   }
 
   return (
-    <div className={styles.ContentWrapper}>
-      <h2 className={styles.heading}>4) Abstract</h2>
-      <div className={styles.AbstractWrapper}>
-        <Text className={styles.description}>
-          Provide your thesis title to safely auto-generate a single-spaced, beautifully formatted
-          Abstract page directly after Acknowledgements.
+    <StepBody>
+      <Hint>
+        Adds the Abstract page after Acknowledgements: heading, your thesis title, then the
+        abstract text single-spaced. Your own abstract text is kept when you click again.
+      </Hint>
+
+      <Field label="Thesis Title" required>
+        <Input
+          placeholder="e.g. STRUCTURAL CHARACTERISTICS OF ADVANCED POLYMERS"
+          value={thesisTitle}
+          onChange={(_, data) => setThesisTitle(data.value)}
+        />
+      </Field>
+
+      <Text className={styles.previewLabel}>Preview</Text>
+      <div className={styles.previewBox}>
+        <Text className={styles.previewHeading}>ABSTRACT</Text>
+        <Text className={styles.previewTitle}>
+          {thesisTitle.trim() ? thesisTitle : "[YOUR THESIS TITLE WILL APPEAR HERE]"}
         </Text>
-
-        {/* Input field for custom title */}
-        <Field label="Thesis Title" required>
-          <Input
-            placeholder="e.g. STRUCTURAL CHARACTERISTICS OF ADVANCED POLYMERS"
-            value={thesisTitle}
-            onChange={(_, data) => setThesisTitle(data.value)}
-          />
-        </Field>
-
-        {/* Student Live UI Layout Preview */}
-        <p style={{ margin: "5px 0 0 0", fontWeight: "600" }}>Document Preview Window:</p>
-        <div className={styles.previewBox}>
-          <Text className={styles.previewHeading}>ABSTRACT</Text>
-          <Text className={styles.previewTitle}>
-            {thesisTitle.trim() ? thesisTitle : "[YOUR THESIS TITLE WILL APPEAR HERE]"}
-          </Text>
-          <Text className={styles.previewParagraph}>{SAMPLE_ABSTRACT_CONTENT}</Text>
-        </div>
-
-        <div className={styles.wrapButtonSize}>
-          <Button
-            className={styles.button}
-            shape="circular"
-            appearance="primary"
-            onClick={handleSetFormat}
-          >
-            Set Format
-          </Button>
-        </div>
-
-        {status && (
-          <Text className={status.type === "success" ? styles.statusSuccess : styles.statusError}>
-            {status.type === "success" ? "✔ " : "❌ "} {status.message}
-          </Text>
-        )}
+        <Text className={styles.previewParagraph}>{SAMPLE_ABSTRACT_CONTENT}</Text>
       </div>
-    </div>
+
+      <Actions>
+        <Button appearance="primary" onClick={handleSetFormat}>
+          Set Format
+        </Button>
+      </Actions>
+      {status && <Status text={status.message} tone={status.type === "success" ? "success" : "error"} />}
+    </StepBody>
   );
 }

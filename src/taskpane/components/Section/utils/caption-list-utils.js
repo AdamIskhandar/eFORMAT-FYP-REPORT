@@ -1,16 +1,18 @@
 /**
- * Chapter-based caption numbering + List of Figures / List of Tables
+ * List of Figures / List of Tables
  *
  * updateCaptionList(context, "figure" | "table"):
- * 1. Walks the document in order, tracking the current Heading's number
- *    ("CHAPTER 3: ..." -> "3", "3.3 Requirement Analysis" -> "3.3").
- * 2. Every centered paragraph that starts with "Figure ..." / "Table ..." is
- *    a caption. It's renumbered to <heading number>.<count in that heading>,
- *    e.g. Figure 3.1, Figure 3.3.1, Figure 3.3.2. Only the label is replaced,
- *    so the caption's own formatting is kept.
- * 3. Captions in chapters before FIRST_CAPTION_CHAPTER are ignored.
- * 4. Each caption is bookmarked, and the list is rebuilt IN PLACE under its
- *    heading (old table deleted, new one inserted) with PAGEREF page numbers.
+ * 1. Renumbers every caption by chapter, using the same rule as Insert
+ *    Caption (word-caption-utils.js): the first figure in Chapter 3 is
+ *    Figure 3.1, the next Figure 3.2. Cross-references follow the new
+ *    numbers. Captions are found in any paragraph, centered or not, and
+ *    inside tables.
+ * 2. Rebuilds the list IN PLACE between its heading and an (invisible) end
+ *    line: old lines deleted, new ones inserted. Each entry is ONE line
+ *    with tab stops - number | title | page - not a Word table, so there
+ *    are no dotted table gridlines. Page numbers are PAGEREF fields that
+ *    point at each caption's own bookmark (Figure_3_1 ...), and each entry
+ *    links to its caption (Ctrl+Click).
  *
  * The list heading is created once: right before Chapter 1 if the Table of
  * Contents was generated (so it sits in the front matter), otherwise at the
@@ -18,6 +20,9 @@
  */
 
 /* global Word */
+
+import { renumberCaptions, getExistingCaptions, numberToBookmark } from "./word-caption-utils";
+import { updateReferencesAfterRenumber } from "./word-crossref-utils";
 
 export const FIRST_CAPTION_CHAPTER = 1;
 
@@ -28,244 +33,309 @@ const TYPE_CONFIG = {
     label: "Figure",
     headingText: "LIST OF FIGURES",
     headingBookmark: "bmFigureListHeading",
-    captionBookmarkPrefix: "bmFig_",
+    endBookmark: "bmFigureListEnd",
   },
   table: {
     label: "Table",
     headingText: "LIST OF TABLES",
     headingBookmark: "bmTableListHeading",
-    captionBookmarkPrefix: "bmTbl_",
+    endBookmark: "bmTableListEnd",
   },
 };
 
-// Usable text width on A4 with 3.8cm / 2.5cm side margins, in points.
-const PAGE_COL_WIDTH_PT = 46;
-const TEXT_COL_WIDTH_PT = 370;
+// List layout (UPTM sample):
+//   Table No.                                            Page
+//   Table 2.1   The fatty acid composition of adipose
+//               tissues from various sites ...             41
+// Each entry is one paragraph: the number, a tab to the title column, the
+// title (wrapped lines line up under it), then a tab to the page number at
+// the right margin - so the page number sits on the title's LAST line.
+// Change these to move things.
+const inchToPt = (inch) => inch * 72;
+const TEXT_WIDTH_PT = 595.3 - inchToPt(1.52) - inchToPt(1.2); // A4, section 3 margins
+const NUMBER_COL_WIDTH_PT = 86; // where the title starts ("Table 2.1" fits before it)
+const PAGE_COL_WIDTH_PT = 44; // space kept free for the page number
+const LIST_FONT_SIZE = 12;
+const GAP_AFTER_HEADER_PT = 18; // gap under "Table No. / Page"
+const GAP_BETWEEN_ENTRIES_PT = 14; // blank line between entries
 
-function headingPrefix(text) {
-  const t = text.trim();
-  let m = t.match(/^CHAPTER\s+(\d+)\b/i);
-  if (m) return m[1];
-  // "3 METHODOLOGY", "3.3 Phases in Agile Methodology", "3.5.1.1 Questionnaire ..."
-  m = t.match(/^(\d+(?:\.\d+)*)\.?\s+\S/);
-  if (m) return m[1];
-  return null;
+const toTwips = (pt) => Math.round(pt * 20);
+
+function escapeXml(text) {
+  return String(text)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
 }
 
-async function scanAndRenumber(context, cfg) {
-  const paragraphs = context.document.body.paragraphs;
-  paragraphs.load(
-    "items/text,items/style,items/styleBuiltIn,items/alignment,items/isListItem,items/tableNestingLevel,items/font/bold"
+// caps off on purpose: the list sits under an ALL CAPS heading and would
+// otherwise inherit it.
+function rPr(bold) {
+  const hp = LIST_FONT_SIZE * 2;
+  return (
+    `<w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:cs="Arial"/>` +
+    (bold ? "<w:b/><w:bCs/>" : '<w:b w:val="0"/><w:bCs w:val="0"/>') +
+    `<w:i w:val="0"/><w:caps w:val="0"/><w:color w:val="000000"/><w:u w:val="none"/>` +
+    `<w:sz w:val="${hp}"/><w:szCs w:val="${hp}"/></w:rPr>`
   );
-  await context.sync();
+}
+const textRun = (text, bold = false) =>
+  `<w:r>${rPr(bold)}<w:t xml:space="preserve">${escapeXml(text)}</w:t></w:r>`;
+const tabRun = (bold = false) => `<w:r>${rPr(bold)}<w:tab/></w:r>`;
 
-  // A heading is a Heading 1-9 styled paragraph, OR - for subheadings a student
-  // typed by hand - a short, bold line that starts with a section number
-  // ("3.1 Introduction", "CHAPTER 3: ...") and doesn't read like a sentence.
-  const isHeadingPara = (p) => {
-    if (/^Heading\s*\d$/i.test(p.styleBuiltIn || "") || /^Heading\s*\d/i.test(p.style || ""))
-      return true;
-    const t = p.text.trim();
-    return (
-      p.font.bold === true &&
-      t.length > 0 &&
-      t.length <= 120 &&
-      !/[.;]$/.test(t) &&
-      headingPrefix(t) !== null
-    );
-  };
+const PAGE_TAB = `<w:tab w:val="right" w:pos="${toTwips(TEXT_WIDTH_PT)}"/>`;
 
-  // Heading numbers come from the heading text ("3.3 Requirement Analysis"),
-  // or - if the template uses automatic list numbering, so the number isn't
-  // in the text - from the paragraph's list string.
-  const headingPrefixByIndex = new Map();
-  const pendingLists = [];
-  paragraphs.items.forEach((p, idx) => {
-    if (p.tableNestingLevel > 0 || !isHeadingPara(p)) return;
-    const fromText = headingPrefix(p.text);
-    if (fromText) {
-      headingPrefixByIndex.set(idx, fromText);
-    } else if (p.isListItem) {
-      const li = p.listItemOrNullObject;
-      li.load("isNullObject,listString");
-      pendingLists.push({ idx, li });
-    }
-  });
-  await context.sync();
-  pendingLists.forEach(({ idx, li }) => {
-    if (li.isNullObject) return;
-    const m = li.listString.match(/(\d+(?:\.\d+)*)/);
-    if (m) headingPrefixByIndex.set(idx, m[1]);
-  });
-
-  const captionPattern = new RegExp(
-    `^(${cfg.label}\\s+\\d+(?:\\.\\d+)*\\s*[:.\\-\\u2013]?)\\s*(.*)$`,
-    "i"
+function lineXml(runs, { before = 0, after = 0, hanging = false, anchor = null } = {}) {
+  const ind = hanging
+    ? `<w:ind w:left="${toTwips(NUMBER_COL_WIDTH_PT)}" w:hanging="${toTwips(NUMBER_COL_WIDTH_PT)}" w:right="${toTwips(PAGE_COL_WIDTH_PT)}"/>`
+    : `<w:ind w:left="0" w:firstLine="0" w:right="0"/>`;
+  const body = anchor
+    ? `<w:hyperlink w:anchor="${escapeXml(anchor)}" w:history="1">${runs}</w:hyperlink>`
+    : runs;
+  return (
+    `<w:p><w:pPr><w:pStyle w:val="Normal"/><w:keepNext w:val="0"/><w:tabs>${PAGE_TAB}</w:tabs>` +
+    `<w:spacing w:before="${toTwips(before)}" w:after="${toTwips(after)}" w:line="240" w:lineRule="auto"/>` +
+    `${ind}<w:jc w:val="left"/>${rPr(false)}</w:pPr>${body}</w:p>`
   );
+}
 
+function listOoxml(cfg, found) {
+  const header = lineXml(textRun(`${cfg.label} No.`, true) + tabRun(true) + textRun("Page", true), {
+    after: GAP_AFTER_HEADER_PT,
+  });
+  const entries =
+    found.length > 0
+      ? found
+          .map((c, i) =>
+            lineXml(textRun(c.label) + tabRun() + textRun(c.title) + tabRun(), {
+              before: i === 0 ? 0 : GAP_BETWEEN_ENTRIES_PT,
+              hanging: true,
+              anchor: c.bookmark,
+            })
+          )
+          .join("")
+      : lineXml(textRun(`No ${cfg.label.toLowerCase()} captions yet.`));
+  // Throwaway last paragraph: Word merges the LAST inserted paragraph into
+  // the line it's inserted before (losing its settings).
+  return (
+    `<pkg:package xmlns:pkg="http://schemas.microsoft.com/office/2006/xmlPackage">` +
+    `<pkg:part pkg:name="/_rels/.rels" pkg:contentType="application/vnd.openxmlformats-package.relationships+xml"><pkg:xmlData>` +
+    `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">` +
+    `<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>` +
+    `</Relationships></pkg:xmlData></pkg:part>` +
+    `<pkg:part pkg:name="/word/document.xml" pkg:contentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"><pkg:xmlData>` +
+    `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>${header}${entries}<w:p/></w:body></w:document>` +
+    `</pkg:xmlData></pkg:part></pkg:package>`
+  );
+}
+
+async function collectCaptions(context, type, cfg) {
+  const numberMap = await renumberCaptions(context, type);
+  await updateReferencesAfterRenumber(context, type, numberMap);
+
+  const captions = await getExistingCaptions(context, type);
+  const found = captions.map((c) => ({
+    label: `${cfg.label} ${c.expected}`,
+    title: c.title,
+    bookmark: numberToBookmark(type, c.expected),
+  }));
+  const chapters = new Set(captions.filter((c) => c.chapter).map((c) => c.chapter));
   const diagnostics = {
-    headings: headingPrefixByIndex.size,
-    captionLike: 0,
+    headings: chapters.size,
+    captionLike: captions.length,
     notCentered: 0,
-    noHeadingAbove: 0,
+    noHeadingAbove: captions.filter((c) => !c.chapter).length,
     beforeFirstChapter: 0,
   };
-  let currentPrefix = null;
-  const counters = {};
-  const found = [];
-
-  paragraphs.items.forEach((p, idx) => {
-    if (p.tableNestingLevel > 0) return; // ignore the generated lists themselves
-    if (isHeadingPara(p)) {
-      // A heading with no number ("Appendix A - ...", "References") ends the
-      // numbered chapters, so figures after it must not inherit the last
-      // chapter's number.
-      currentPrefix = headingPrefixByIndex.has(idx) ? headingPrefixByIndex.get(idx) : null;
-      return;
-    }
-
-    const m = p.text.trim().match(captionPattern);
-    if (!m) return;
-    if (p.alignment !== "Centered") {
-      diagnostics.notCentered++;
-      return;
-    }
-    diagnostics.captionLike++;
-
-    if (!currentPrefix) {
-      diagnostics.noHeadingAbove++;
-      return;
-    }
-    const chapter = parseInt(currentPrefix.split(".")[0], 10);
-    if (chapter < FIRST_CAPTION_CHAPTER) {
-      diagnostics.beforeFirstChapter++;
-      return;
-    }
-
-    counters[currentPrefix] = (counters[currentPrefix] || 0) + 1;
-    found.push({
-      paragraph: p,
-      oldPrefix: m[1].trim(),
-      number: `${currentPrefix}.${counters[currentPrefix]}`,
-      title: m[2].trim(),
-    });
-  });
-
-  // Replace only the label part of each caption ("Figure 1:" -> "Figure 3.3.2").
-  const searches = found.map((c) => {
-    const newPrefix = `${cfg.label} ${c.number}`;
-    c.entryText = c.title ? `${newPrefix} ${c.title}` : newPrefix;
-    if (c.oldPrefix === newPrefix) return null;
-    const res = c.paragraph.search(c.oldPrefix, { matchCase: true });
-    res.load("items");
-    return { res, newPrefix };
-  });
-  await context.sync();
-
-  searches.forEach((s) => {
-    if (s && s.res.items.length > 0) s.res.items[0].insertText(s.newPrefix, "Replace");
-  });
-
-  // Bookmark each caption so the list's PAGEREF fields have a target.
-  found.forEach((c, i) => {
-    c.paragraph.getRange().insertBookmark(`${cfg.captionBookmarkPrefix}${i + 1}`);
-  });
-  await context.sync();
-
   return { found, diagnostics };
 }
 
-async function getOrCreateListHeading(context, cfg) {
+function formatEndLine(paragraph) {
+  // Invisible marker line: where the list ends. Tiny, no spacing.
+  paragraph.styleBuiltIn = Word.BuiltInStyleName.normal;
+  paragraph.font.size = 2;
+  paragraph.spaceBefore = 0;
+  paragraph.spaceAfter = 0;
+  paragraph.lineSpacing = 2;
+}
+
+/**
+ * Finds (or creates) the list's heading and its end line. A heading
+ * bookmark that sits on some other text (left over from an older version)
+ * is dropped and a fresh heading made, so a list never lands under the
+ * wrong title.
+ */
+async function getOrCreateListBlock(context, cfg) {
   const existing = context.document.getBookmarkRangeOrNullObject(cfg.headingBookmark);
   existing.load("isNullObject");
   await context.sync();
-  if (!existing.isNullObject) return existing.paragraphs.getFirst();
+
+  let heading = null;
+  if (!existing.isNullObject) {
+    const para = existing.paragraphs.getFirst();
+    para.load("text");
+    await context.sync();
+    if (para.text.trim().toUpperCase() === cfg.headingText) {
+      heading = para;
+    } else {
+      context.document.deleteBookmark(cfg.headingBookmark);
+      await context.sync();
+    }
+  }
+
+  if (heading) {
+    const end = context.document.getBookmarkRangeOrNullObject(cfg.endBookmark);
+    end.load("isNullObject");
+    await context.sync();
+    if (!end.isNullObject) return { heading, endLine: end.paragraphs.getLast() };
+
+    // Heading from an older version (list was a table): remove that table
+    // and add the end line right under the heading.
+    const next = heading.getNextOrNullObject();
+    next.load("isNullObject");
+    await context.sync();
+    if (!next.isNullObject) {
+      const oldTable = next.parentTableOrNullObject;
+      oldTable.load("isNullObject");
+      await context.sync();
+      if (!oldTable.isNullObject) oldTable.delete();
+    }
+    const endLine = heading.insertParagraph("", "After");
+    formatEndLine(endLine);
+    endLine.getRange("Whole").insertBookmark(cfg.endBookmark);
+    await context.sync();
+    return { heading, endLine };
+  }
 
   const anchor = context.document.getBookmarkRangeOrNullObject(FIRST_HEADING_BOOKMARK);
   anchor.load("isNullObject");
   await context.sync();
 
-  let heading;
   if (!anchor.isNullObject) {
     // Front-matter placement: just before Chapter 1, then a page break after
     // the list so Chapter 1 still starts on its own page.
     heading = anchor.paragraphs.getFirst().insertParagraph(cfg.headingText, "Before");
-    heading.style = "Normal";
-    const spacer = heading.insertParagraph("", "After");
-    spacer.style = "Normal";
-    spacer.insertBreak(Word.BreakType.page, "After");
   } else {
     context.document.body.insertBreak(Word.BreakType.page, "End");
     heading = context.document.body.insertParagraph(cfg.headingText, "End");
-    heading.style = "Normal";
   }
-
+  heading.styleBuiltIn = Word.BuiltInStyleName.normal;
   heading.font.name = "Arial";
   heading.font.bold = true;
+  heading.font.italic = false;
   heading.font.size = 12;
   heading.font.allCaps = true;
+  heading.font.color = "#000000";
   heading.alignment = "Centered";
+  heading.leftIndent = 0;
+  heading.firstLineIndent = 0;
+  heading.spaceBefore = 0;
   heading.spaceAfter = 18;
-  heading.getRange().insertBookmark(cfg.headingBookmark);
+  heading.getRange("Content").insertBookmark(cfg.headingBookmark);
+
+  const endLine = heading.insertParagraph("", "After");
+  formatEndLine(endLine);
+  endLine.font.allCaps = false;
+  endLine.font.bold = false;
+  endLine.alignment = "Left";
+  endLine.getRange("Whole").insertBookmark(cfg.endBookmark);
+  if (!anchor.isNullObject) endLine.insertBreak(Word.BreakType.page, "After");
   await context.sync();
 
-  return heading;
+  return { heading, endLine };
+}
+
+// Heading ... end line, as one range.
+function listBlock(heading, endLine) {
+  return heading.getRange("Whole").expandTo(endLine.getRange("Whole"));
+}
+
+// Deletes the lines between the heading and the end line. Fields go first,
+// whole - Word refuses to delete a line that holds part of a field.
+async function clearList(context, heading, endLine) {
+  const fields = listBlock(heading, endLine).fields;
+  fields.load("items");
+  await context.sync();
+  fields.items.forEach((f) => f.delete());
+  await context.sync();
+
+  const lines = listBlock(heading, endLine).paragraphs;
+  lines.load("items");
+  await context.sync();
+  for (let i = lines.items.length - 2; i >= 1; i--) lines.items[i].delete();
+  await context.sync();
 }
 
 export async function updateCaptionList(context, type) {
   const cfg = TYPE_CONFIG[type];
   if (!cfg) throw new Error(`Unknown caption type "${type}".`);
 
-  const { found, diagnostics } = await scanAndRenumber(context, cfg);
-  const headingPara = await getOrCreateListHeading(context, cfg);
+  const { found, diagnostics } = await collectCaptions(context, type, cfg);
+  const { heading, endLine } = await getOrCreateListBlock(context, cfg);
 
-  // Remove the previous table (if the paragraph after the heading is in one).
-  const next = headingPara.getNextOrNullObject();
-  next.load("isNullObject");
-  await context.sync();
-  if (!next.isNullObject) {
-    const oldTable = next.parentTableOrNullObject;
-    oldTable.load("isNullObject");
-    await context.sync();
-    if (!oldTable.isNullObject) oldTable.delete();
-  }
-
-  const values =
-    found.length > 0
-      ? found.map((c) => [c.entryText, ""])
-      : [[`No ${cfg.label.toLowerCase()} captions yet`, ""]];
-  const table = headingPara.insertTable(values.length, 2, "After", values);
-  table.font.name = "Arial";
-  table.font.size = 11;
-  table.font.bold = false;
-
-  [
-    Word.BorderLocation.top,
-    Word.BorderLocation.bottom,
-    Word.BorderLocation.left,
-    Word.BorderLocation.right,
-    Word.BorderLocation.insideHorizontal,
-    Word.BorderLocation.insideVertical,
-  ].forEach((loc) => {
-    table.getBorder(loc).type = Word.BorderType.none;
-  });
-
-  table.getCell(0, 0).columnWidth = TEXT_COL_WIDTH_PT;
-  table.getCell(0, 1).columnWidth = PAGE_COL_WIDTH_PT;
-  for (let i = 0; i < values.length; i++) {
-    table.getCell(i, 1).horizontalAlignment = "Right";
-  }
+  await clearList(context, heading, endLine);
+  endLine.getRange("Start").insertOoxml(listOoxml(cfg, found), "Before");
   await context.sync();
 
-  // Page numbers last: the caption bookmarks already exist, so no
-  // "Error! Bookmark not defined."
+  // Pin the end bookmark back onto the end line only (Word can stretch it
+  // over lines inserted right before it).
+  const end = context.document.getBookmarkRangeOrNullObject(cfg.endBookmark).paragraphs.getLast();
+  end.getRange("Whole").insertBookmark(cfg.endBookmark);
+  formatEndLine(end);
+  await context.sync();
+
+  // Page numbers last, at the end of each entry line. Lines in the block:
+  // [heading, "Table No. / Page", ...entries, end line].
+  const lines = listBlock(heading, end).paragraphs;
+  lines.load("items");
+  await context.sync();
+  const FIRST = 2;
+  const fields = [];
   found.forEach((c, i) => {
-    table
-      .getCell(i, 1)
-      .body.getRange("End")
-      .insertField("End", Word.FieldType.pageRef, `${cfg.captionBookmarkPrefix}${i + 1}`, false);
+    const line = lines.items[FIRST + i];
+    if (!line) return;
+    fields.push(line.getRange("End").insertField("End", Word.FieldType.pageRef, c.bookmark, false));
   });
   await context.sync();
+  try {
+    fields.forEach((f) => f.updateResult());
+    await context.sync();
+  } catch (err) {
+    console.warn(
+      "Could not refresh the list page numbers (press F9 in Word if one looks off).",
+      err
+    );
+  }
 
   return { count: found.length, diagnostics };
+}
+
+/**
+ * Re-reads the page numbers in both lists. Word lays out the pages in the
+ * background AFTER the add-in's changes, so the numbers read straight away
+ * can be too early; the panel calls this again a moment later (like F9).
+ */
+export async function refreshCaptionListPageNumbers(context) {
+  let refreshed = 0;
+  for (const cfg of Object.values(TYPE_CONFIG)) {
+    const head = context.document.getBookmarkRangeOrNullObject(cfg.headingBookmark);
+    const end = context.document.getBookmarkRangeOrNullObject(cfg.endBookmark);
+    head.load("isNullObject");
+    end.load("isNullObject");
+    await context.sync();
+    if (head.isNullObject || end.isNullObject) continue;
+
+    const fields = listBlock(head.paragraphs.getFirst(), end.paragraphs.getLast()).fields;
+    fields.load("items/code");
+    await context.sync();
+    fields.items
+      .filter((f) => /^\s*PAGEREF\b/i.test(f.code || ""))
+      .forEach((f) => {
+        f.updateResult();
+        refreshed++;
+      });
+    await context.sync();
+  }
+  return refreshed;
 }

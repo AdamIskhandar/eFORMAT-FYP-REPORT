@@ -1,49 +1,35 @@
 /**
  * Caption Automation Module (Task 4.1)
- * - Figure caption generation
- * - Table caption generation
- * - Auto numbering functions
+ * - Figure / table caption generation
+ * - Chapter-based auto numbering: the first figure in Chapter 3 is
+ *   "Figure 3.1", the next "Figure 3.2"; tables count separately
+ *   ("Table 3.1", ...). The count restarts in every chapter.
  * - Caption validation rules
- * - List of Figures / List of Tables generation
  *
- * Design note:
- * Captions are plain paragraphs formatted as "Figure N: text" / "Table N: text",
- * each anchored with a bookmark (Figure_N / Table_N). This avoids relying on
- * native Word SEQ fields, which behave inconsistently between Word desktop
- * and Word on the web. The Cross-Referencing module (Task 4.2) looks up a
- * caption's location purely through these bookmarks.
+ * Captions are plain paragraphs, "Figure 3.1: text" / "Table 3.1: text",
+ * each anchored with a bookmark (Figure_3_1 / Table_3_1 - bookmark names
+ * can't contain dots). Cross-references (word-crossref-utils.js) and the
+ * List of Figures / Tables (caption-list-utils.js) find captions through
+ * these bookmarks.
  *
- * The List of Figures / List of Tables generator below follows the same
- * principle: it's built directly from getExistingCaptions() rather than
- * Word's native `TOC \c` field, since that field only recognizes SEQ fields
- * and would never see these bookmark-based captions. Page numbers are shown
- * via a PAGEREF field pointing at each caption's own Figure_N/Table_N
- * bookmark (already created by insertCaption) - so no new native numbering
- * mechanism is introduced, just a page lookup against an existing bookmark.
+ * The chapter of a caption is the last chapter heading above it: a
+ * "Heading 1" paragraph or a line starting "CHAPTER 3" / "CHAPTER III".
+ * A Heading 1 with no chapter number (REFERENCES, APPENDIX ...) ends the
+ * chapters, so captions after it are numbered 1, 2, 3 ...
  *
- * Entries are laid out as a borderless 2-column table (caption text | page
- * number) rather than tab-stopped paragraphs. Word's JS API does not
- * reliably expose paragraph tab stops, so building this with a table -
- * solid, well-supported functionality - avoids that fragility entirely.
- *
- * Tradeoff: renumbering is explicit (call renumberCaptions), it does not
- * happen automatically the way native Word fields would update on their own.
- * The List of Figures/Tables is the same - call generateCaptionList again
- * after adding or renumbering captions to refresh it. Each call wraps the
- * whole generated section (heading + table) in one bookmark and deletes +
- * rebuilds that bookmark's contents, so repeated clicks never duplicate
- * page breaks or leave stale entries behind.
+ * Inserting a caption renumbers every caption of that type, so adding a
+ * figure in the middle of Chapter 3 shifts the later ones (3.2 -> 3.3) and
+ * updates their cross-references.
  */
+
+/* global Word */
 
 const CAPTION_CONFIG = {
   figure: { label: "Figure", bookmarkPrefix: "Figure_" },
   table: { label: "Table", bookmarkPrefix: "Table_" },
 };
 
-const LIST_CONFIG = {
-  figure: { blockBookmark: "bmFigureListBlock", headingText: "LIST OF FIGURES" },
-  table: { blockBookmark: "bmTableListBlock", headingText: "LIST OF TABLES" },
-};
+const NEW_CAPTION_BOOKMARK = "bmNewCaptionTemp";
 
 function getConfig(type) {
   const config = CAPTION_CONFIG[type];
@@ -51,227 +37,232 @@ function getConfig(type) {
   return config;
 }
 
+// "3.1" -> "Figure_3_1"
+export function numberToBookmark(type, number) {
+  return `${getConfig(type).bookmarkPrefix}${String(number).replace(/\./g, "_")}`;
+}
+
+// "Figure_3_1" -> "3.1" (null if it isn't a caption bookmark of this type)
+export function bookmarkToNumber(type, bookmarkName) {
+  const { bookmarkPrefix } = getConfig(type);
+  if (!bookmarkName || !bookmarkName.startsWith(bookmarkPrefix)) return null;
+  const rest = bookmarkName.slice(bookmarkPrefix.length);
+  return /^\d+(?:_\d+)*$/.test(rest) ? rest.replace(/_/g, ".") : null;
+}
+
+function romanToInt(roman) {
+  const v = { I: 1, V: 5, X: 10, L: 50, C: 100, D: 500, M: 1000 };
+  const r = roman.toUpperCase();
+  let total = 0;
+  for (let i = 0; i < r.length; i++) {
+    const cur = v[r[i]];
+    const next = v[r[i + 1]] || 0;
+    total += cur < next ? -cur : cur;
+  }
+  return total;
+}
+
+const isHeading1 = (p) =>
+  /^Heading1$/i.test(p.styleBuiltIn || "") || /^Heading\s*1$/i.test(p.style || "");
+
+// Returns undefined if the paragraph isn't a chapter-level heading, null for
+// an unnumbered one (REFERENCES, APPENDIX), or the chapter number.
+function chapterOfHeading(p) {
+  if (p.tableNestingLevel > 0) return undefined;
+  const t = p.text.trim(); // trim() also drops the line breaks above "CHAPTER I"
+  let m = t.match(/^CHAPTER\s+(\d+)\b/i);
+  if (m) return parseInt(m[1], 10);
+  m = t.match(/^CHAPTER\s+([IVXLCDM]+)\b/i);
+  if (m) return romanToInt(m[1]);
+  if (!isHeading1(p)) return undefined;
+  m = t.match(/^(\d+)\.?\s+\S/); // "3 METHODOLOGY"
+  return m ? parseInt(m[1], 10) : null;
+}
+
 /**
- * Scans the document body for existing captions of a given type, in
- * document order, and returns their paragraph objects + parsed numbers.
+ * All captions of a type, in document order - in normal paragraphs and in
+ * table cells. A caption is a paragraph starting "Figure <number>" followed
+ * by ":" "." or "-" (or any centered "Figure <number> ..." line). Each comes
+ * back with the number it SHOULD have (`expected`) for its chapter.
  */
 export async function getExistingCaptions(context, type) {
   const { label } = getConfig(type);
   const paragraphs = context.document.body.paragraphs;
-  paragraphs.load("items/text");
+  paragraphs.load(
+    "items/text,items/style,items/styleBuiltIn,items/alignment,items/tableNestingLevel"
+  );
   await context.sync();
 
-  const pattern = new RegExp(`^${label}\\s+(\\d+)\\s*:`, "i");
+  const pattern = new RegExp(`^${label}\\s+(\\d+(?:\\.\\d+)*)\\s*([:.\\-\\u2013]?)\\s*(.*)$`, "is");
+
   const captions = [];
+  let chapter = null;
+  let region = 0; // changes at every chapter-level heading
+  const counters = {};
 
   paragraphs.items.forEach((p, index) => {
-    const match = p.text.trim().match(pattern);
-    if (match) {
-      captions.push({
-        paragraph: p,
-        index,
-        number: parseInt(match[1], 10),
-        text: p.text.trim(),
-      });
+    const ch = chapterOfHeading(p);
+    if (ch !== undefined) {
+      chapter = ch;
+      region++;
+      return;
     }
+
+    const text = p.text.trim();
+    const m = text.match(pattern);
+    if (!m) return;
+    const hasSeparator = m[2] !== "";
+    if (!hasSeparator && p.alignment !== "Centered") return; // "Figure 3.1 shows ..." is a sentence
+    if (/\t\s*\d+\s*$/.test(p.text)) return; // an entry of an old-style list (text <tab> page)
+
+    counters[region] = (counters[region] || 0) + 1;
+    const expected = chapter ? `${chapter}.${counters[region]}` : `${counters[region]}`;
+    captions.push({
+      paragraph: p,
+      index,
+      chapter,
+      number: m[1],
+      expected,
+      separator: m[2],
+      title: m[3].trim(),
+      text,
+    });
   });
 
   return captions;
 }
 
 /**
- * Task 4.1 - Develop figure/table caption generation.
- * Inserts a new caption paragraph after the current selection, numbered
- * one higher than the current max, and anchors a bookmark to it.
- */
-export async function insertCaption(context, type, captionText) {
-  const { label, bookmarkPrefix } = getConfig(type);
-
-  const existing = await getExistingCaptions(context, type);
-  const nextNumber = existing.length > 0 ? Math.max(...existing.map((c) => c.number)) + 1 : 1;
-
-  const selection = context.document.getSelection();
-  const fullText = `${label} ${nextNumber}: ${captionText}`;
-  const inserted = selection.insertParagraph(fullText, Word.InsertLocation.after);
-
-  inserted.font.bold = true;
-  inserted.font.size = 11;
-  inserted.alignment = Word.Alignment.centered;
-  await context.sync();
-
-  const bookmarkName = `${bookmarkPrefix}${nextNumber}`;
-  inserted.getRange().insertBookmark(bookmarkName);
-  await context.sync();
-
-  return { number: nextNumber, bookmarkName, text: fullText };
-}
-
-/**
- * Task 4.1 - Implement auto numbering functions.
- * Re-scans captions of a type in document order and renumbers them 1..N,
- * renaming bookmarks to match. Returns { oldNumber: newNumber } so callers
- * can sync any inline cross-references (see updateReferencesAfterRenumber
- * in word-crossref-utils.js).
+ * Renumbers every caption of a type by chapter (Figure 3.1, 3.2 ...) and
+ * moves the bookmarks to match. Returns { oldNumber: newNumber } for every
+ * caption, for updateReferencesAfterRenumber in word-crossref-utils.js.
  */
 export async function renumberCaptions(context, type) {
   const { label, bookmarkPrefix } = getConfig(type);
   const captions = await getExistingCaptions(context, type);
-  captions.sort((a, b) => a.index - b.index);
 
   const numberMap = {};
+  captions.forEach((c) => {
+    if (!(c.number in numberMap)) numberMap[c.number] = c.expected;
+  });
 
-  for (let i = 0; i < captions.length; i++) {
-    const newNumber = i + 1;
-    const oldNumber = captions[i].number;
-    numberMap[oldNumber] = newNumber;
-
-    if (oldNumber !== newNumber) {
-      const p = captions[i].paragraph;
-      const rest = captions[i].text
-        .replace(new RegExp(`^${label}\\s+${oldNumber}\\s*:`, "i"), "")
-        .trim();
-      p.insertText(`${label} ${newNumber}: ${rest}`, Word.InsertLocation.replace);
-
-      const oldBookmark = `${bookmarkPrefix}${oldNumber}`;
-      const newBookmark = `${bookmarkPrefix}${newNumber}`;
-      const range = context.document.getBookmarkRangeOrNullObject(oldBookmark);
-      range.load("isNullObject");
-      await context.sync();
-
-      if (!range.isNullObject) {
-        range.insertBookmark(newBookmark);
-      }
-    }
-  }
-
+  // Replace only the "Figure 2" part, so the caption's own text and
+  // formatting stay as they are.
+  const searches = captions.map((c) => {
+    if (c.number === c.expected) return null;
+    const res = c.paragraph.search(`${label} ${c.number}`, { matchCase: false });
+    res.load("items");
+    return res;
+  });
   await context.sync();
+  searches.forEach((res, i) => {
+    if (res && res.items.length > 0) {
+      res.items[0].insertText(`${label} ${captions[i].expected}`, Word.InsertLocation.replace);
+    }
+  });
+  await context.sync();
+
+  // Bookmark each caption under its new number. Re-using a name moves that
+  // bookmark, so going through in order leaves every name on the right
+  // caption; leftovers (deleted captions, old numbers) are removed after.
+  const wanted = new Set();
+  captions.forEach((c) => {
+    const name = numberToBookmark(type, c.expected);
+    wanted.add(name);
+    c.paragraph.getRange("Content").insertBookmark(name);
+  });
+  await context.sync();
+
+  const all = context.document.body.getRange("Whole").getBookmarks(true, true);
+  await context.sync();
+  all.value
+    .filter((name) => name.startsWith(bookmarkPrefix) && !wanted.has(name))
+    .forEach((name) => context.document.deleteBookmark(name));
+  await context.sync();
+
   return numberMap;
 }
 
 /**
- * Task 4.1 - Implement caption validation rules.
- * Checks captions of a type are sequential from 1 with no gaps/duplicates,
- * and that each has actual text after the colon.
+ * Inserts a new caption at the cursor and numbers it for its chapter.
+ * - Cursor in a table: a Table caption goes above the table, a Figure
+ *   caption below it.
+ * - Cursor anywhere else (a paragraph of text, a picture): the caption goes
+ *   on a new line after that paragraph.
+ * Every caption of the type is then renumbered, so later ones shift.
+ */
+export async function insertCaption(context, type, captionText) {
+  const { label } = getConfig(type);
+  const text = `${label} 0: ${captionText.trim()}`; // real number set below
+
+  const selection = context.document.getSelection();
+  const table = selection.parentTableOrNullObject;
+  table.load("isNullObject");
+  await context.sync();
+
+  let inserted;
+  if (!table.isNullObject) {
+    inserted = table.insertParagraph(text, type === "table" ? "Before" : "After");
+  } else {
+    inserted = selection.paragraphs.getLast().insertParagraph(text, Word.InsertLocation.after);
+  }
+
+  // A plain caption line, whatever the paragraph it came from looked like
+  // (a heading, a bullet, an indented paragraph).
+  inserted.styleBuiltIn = Word.BuiltInStyleName.normal;
+  inserted.load("isListItem");
+  await context.sync();
+  if (inserted.isListItem) inserted.detachFromList();
+  inserted.font.name = "Arial";
+  inserted.font.size = 10;
+  inserted.font.bold = true;
+  inserted.font.italic = true;
+  inserted.font.color = "#000000";
+  inserted.alignment = Word.Alignment.centered;
+  inserted.leftIndent = 0;
+  inserted.firstLineIndent = 0;
+  inserted.spaceBefore = 6;
+  inserted.spaceAfter = 12;
+  inserted.getRange("Content").insertBookmark(NEW_CAPTION_BOOKMARK);
+  await context.sync();
+
+  const numberMap = await renumberCaptions(context, type);
+
+  const mine = context.document.getBookmarkRangeOrNullObject(NEW_CAPTION_BOOKMARK);
+  mine.load("isNullObject,text");
+  await context.sync();
+  const finalText = mine.isNullObject ? text : mine.text.trim();
+  context.document.deleteBookmark(NEW_CAPTION_BOOKMARK);
+  await context.sync();
+
+  const m = finalText.match(new RegExp(`^${label}\\s+(\\d+(?:\\.\\d+)*)`, "i"));
+  const number = m ? m[1] : null;
+  return {
+    number,
+    bookmarkName: number ? numberToBookmark(type, number) : null,
+    text: finalText,
+    numberMap,
+  };
+}
+
+/**
+ * Checks every caption has the number its chapter gives it, no duplicates,
+ * and text after the number.
  */
 export async function validateCaptions(context, type) {
   const { label } = getConfig(type);
   const captions = await getExistingCaptions(context, type);
-  captions.sort((a, b) => a.index - b.index);
 
   const issues = [];
   const seen = new Set();
-
-  captions.forEach((c, i) => {
-    const expected = i + 1;
-    if (c.number !== expected) {
-      issues.push(`${label} at position ${i + 1} is numbered ${c.number}, expected ${expected}.`);
+  captions.forEach((c) => {
+    if (c.number !== c.expected) {
+      issues.push(`${label} ${c.number} should be ${label} ${c.expected} (click Renumber All).`);
     }
-    if (seen.has(c.number)) {
-      issues.push(`Duplicate ${label} number ${c.number} found.`);
-    }
+    if (seen.has(c.number)) issues.push(`Duplicate ${label} number ${c.number} found.`);
     seen.add(c.number);
-
-    if (!/:\s*\S/.test(c.text)) {
-      issues.push(`${label} ${c.number} is missing caption text after the colon.`);
-    }
+    if (!c.title) issues.push(`${label} ${c.number} is missing caption text.`);
   });
 
   return { valid: issues.length === 0, count: captions.length, issues };
-}
-
-/**
- * List of Figures / List of Tables generator.
- *
- * Builds (or rebuilds) a plain list of captions in document order, driven
- * entirely by getExistingCaptions() - not Word's native TOC field, since
- * that only recognizes SEQ fields and these captions are plain text +
- * bookmarks. Safe to call repeatedly: it clears its own previously
- * generated entries (tracked via entriesBookmark) and reinserts fresh ones,
- * so it stays in sync as captions are added, removed, or renumbered.
- */
-export async function generateCaptionList(context, type) {
-  const { label, bookmarkPrefix } = getConfig(type);
-  const { headingBookmark, entriesBookmark, headingText } = LIST_CONFIG[type];
-
-  const captions = await getExistingCaptions(context, type);
-  captions.sort((a, b) => a.index - b.index);
-
-  const headingMarker = context.document.getBookmarkRangeOrNullObject(headingBookmark);
-  await context.sync();
-
-  if (headingMarker.isNullObject) {
-    // First time: create the heading on its own page, plus an empty
-    // placeholder paragraph (bookmarked) that marks where entries go and
-    // acts as the "end of list" anchor for future regenerations.
-    context.document.body.insertBreak(Word.BreakType.page, Word.InsertLocation.end);
-
-    const heading = context.document.body.insertParagraph(headingText, Word.InsertLocation.end);
-    heading.font.name = "Arial";
-    heading.font.bold = true;
-    heading.font.size = 12;
-    heading.font.allCaps = true;
-    heading.alignment = Word.Alignment.centered;
-    heading.spaceAfter = 18;
-    heading.getRange().insertBookmark(headingBookmark);
-
-    const placeholder = context.document.body.insertParagraph("", Word.InsertLocation.end);
-    placeholder.getRange().insertBookmark(entriesBookmark);
-    await context.sync();
-  }
-
-  // Remove any previously generated entry paragraphs (tagged with their own
-  // bookmarks) before rebuilding.
-  const entryTagPrefix = type === "table" ? "bmListEntryTable_" : "bmListEntryFigure_";
-  for (let i = 1; i <= 200; i++) {
-    const tag = `${entryTagPrefix}${i}`;
-    const existingEntry = context.document.getBookmarkRangeOrNullObject(tag);
-    existingEntry.load("isNullObject");
-    // eslint-disable-next-line no-await-in-loop
-    await context.sync();
-    if (existingEntry.isNullObject) break; // stop at first gap - entries are always contiguous 1..N
-    existingEntry.paragraphs.load("items");
-    // eslint-disable-next-line no-await-in-loop
-    await context.sync();
-    existingEntry.paragraphs.items.forEach((p) => p.delete());
-    // eslint-disable-next-line no-await-in-loop
-    await context.sync();
-  }
-
-  if (captions.length === 0) {
-    return { count: 0 };
-  }
-
-  const anchor = context.document.getBookmarkRangeOrNullObject(entriesBookmark);
-  await context.sync();
-
-  captions.forEach((c, i) => {
-    // Inserting "Before" the anchor each time keeps entries in order and
-    // ahead of the placeholder, matching the pattern used elsewhere in
-    // this add-in for skeleton content.
-    const entry = anchor.insertParagraph(`${c.text}\t`, Word.InsertLocation.before);
-    entry.font.name = "Arial";
-    entry.font.size = 11;
-    entry.font.bold = false;
-    entry.alignment = Word.Alignment.left;
-    entry.spaceAfter = 6;
-    entry.paragraphFormat.tabStops.clear();
-    entry.paragraphFormat.tabStops.add(
-      PAGE_NUMBER_TAB_STOP_PT,
-      Word.TabAlignment.right,
-      Word.TabLeader.dots
-    );
-
-    // Points at this caption's own Figure_N / Table_N bookmark (already
-    // created by insertCaption) - no new field-based numbering introduced,
-    // this only asks Word "what page is that bookmark currently on".
-    const captionBookmark = `${bookmarkPrefix}${c.number}`;
-    entry
-      .getRange("End")
-      .insertField(Word.InsertLocation.end, Word.FieldType.pageRef, captionBookmark, false);
-
-    entry.getRange().insertBookmark(`${entryTagPrefix}${i + 1}`);
-  });
-
-  await context.sync();
-  return { count: captions.length };
 }

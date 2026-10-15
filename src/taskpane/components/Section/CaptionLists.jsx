@@ -1,19 +1,17 @@
 import React, { useState } from "react";
-import { makeStyles, Button, Text } from "@fluentui/react-components";
-import { updateCaptionList, FIRST_CAPTION_CHAPTER } from "../Section/utils/caption-list-utils";
+import { Button } from "@fluentui/react-components";
+import { ImageMultiple20Regular, Table20Regular } from "@fluentui/react-icons";
+import { StepBody, Hint, Actions, Status } from "../ui/StepUI";
+import {
+  updateCaptionList,
+  refreshCaptionListPageNumbers,
+  FIRST_CAPTION_CHAPTER,
+} from "../Section/utils/caption-list-utils";
 
 /* global Word */
 
-const useStyles = makeStyles({
-  ContentWrapper: { paddingLeft: "10px" },
-  heading: { color: "white", fontSize: "20px" },
-  Wrapper: { paddingLeft: "25px", display: "flex", flexDirection: "column", gap: "10px" },
-  buttonRow: { display: "flex", gap: "10px", flexWrap: "wrap", marginTop: "6px" },
-  status: { display: "block", marginTop: "6px", color: "#9fd89f" },
-  warn: { display: "block", marginTop: "6px", color: "#e0a458" },
-  error: { display: "block", marginTop: "6px", color: "#e07a7a" },
-  note: { color: "#c7c7c7" },
-});
+// Message colour for each kind of message this panel sets.
+const TONE = { status: "success", warn: "warning", error: "error" };
 
 // Explains WHY nothing was listed, using what the scan actually saw.
 function explainEmpty(label, d) {
@@ -41,9 +39,20 @@ function explainEmpty(label, d) {
 }
 
 export default function CaptionLists() {
-  const styles = useStyles();
   const [figureMsg, setFigureMsg] = useState({ text: "", tone: "status" });
   const [tableMsg, setTableMsg] = useState({ text: "", tone: "status" });
+
+  // Word finishes laying out the pages in the background after the update,
+  // so refresh the page numbers again a moment later (twice, for long reports).
+  function refreshPageNumbersLater() {
+    [1500, 4000].forEach((delay) =>
+      setTimeout(() => {
+        Word.run((context) => refreshCaptionListPageNumbers(context)).catch((err) =>
+          console.warn("Delayed page-number refresh failed (press F9 in Word).", err)
+        );
+      }, delay)
+    );
+  }
 
   async function update(type, label, setMsg) {
     try {
@@ -58,6 +67,7 @@ export default function CaptionLists() {
             : { text: explainEmpty(label, diagnostics), tone: "warn" }
         );
       });
+      refreshPageNumbersLater();
     } catch (err) {
       console.error(err);
       setMsg({ text: err.message || `Could not update the List of ${label}s.`, tone: "error" });
@@ -65,35 +75,31 @@ export default function CaptionLists() {
   }
 
   return (
-    <div className={styles.ContentWrapper}>
-      <h2 className={styles.heading}>7) List of Figures &amp; Tables</h2>
-      <div className={styles.Wrapper}>
-        <Text className={styles.note}>
-          Captions are numbered by the heading they sit under (Figure 3.1, Figure 3.3.2, ...),
-          starting from Chapter {FIRST_CAPTION_CHAPTER}. Update renumbers every caption and rebuilds
-          the list. Press Ctrl+A then F9 in Word afterwards to refresh the page numbers.
-        </Text>
+    <StepBody>
+      <Hint>
+        Captions are numbered by chapter: the first figure in Chapter 3 is Figure 3.1, the next
+        Figure 3.2 (tables count separately). Update renumbers every caption and rebuilds the list.
+        Page numbers refresh by themselves a moment later.
+      </Hint>
 
-        <div className={styles.buttonRow}>
-          <Button
-            appearance="primary"
-            shape="circular"
-            onClick={() => update("figure", "Figure", setFigureMsg)}
-          >
-            Update List of Figures
-          </Button>
-          <Button
-            appearance="primary"
-            shape="circular"
-            onClick={() => update("table", "Table", setTableMsg)}
-          >
-            Update List of Tables
-          </Button>
-        </div>
-
-        {figureMsg.text && <Text className={styles[figureMsg.tone]}>{figureMsg.text}</Text>}
-        {tableMsg.text && <Text className={styles[tableMsg.tone]}>{tableMsg.text}</Text>}
-      </div>
-    </div>
+      <Actions stretch>
+        <Button
+          appearance="primary"
+          icon={<ImageMultiple20Regular />}
+          onClick={() => update("figure", "Figure", setFigureMsg)}
+        >
+          Update List of Figures
+        </Button>
+        <Status text={figureMsg.text} tone={TONE[figureMsg.tone]} />
+        <Button
+          appearance="primary"
+          icon={<Table20Regular />}
+          onClick={() => update("table", "Table", setTableMsg)}
+        >
+          Update List of Tables
+        </Button>
+        <Status text={tableMsg.text} tone={TONE[tableMsg.tone]} />
+      </Actions>
+    </StepBody>
   );
 }

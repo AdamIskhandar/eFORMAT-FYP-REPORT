@@ -1,24 +1,18 @@
 import React, { useState } from "react";
+import { makeStyles, tokens, Button, Dropdown, Option, Input, Field } from "@fluentui/react-components";
 import {
-  Button,
-  Dropdown,
-  Option,
-  Input,
-  Label,
-  Field,
-  MessageBar,
-  MessageBarBody,
-  MessageBarTitle,
-  MessageBarActions,
-  Divider,
-  makeStyles,
-  tokens,
-} from "@fluentui/react-components";
-import { Dismiss16Regular } from "@fluentui/react-icons";
+  Add20Regular,
+  NumberSymbol20Regular,
+  CheckmarkStarburst20Regular,
+  ArrowSync20Regular,
+  Link20Regular,
+  ArrowRight20Regular,
+} from "@fluentui/react-icons";
 import {
   insertCaption,
   renumberCaptions,
   validateCaptions,
+  bookmarkToNumber,
 } from "../Section/utils/word-caption-utils";
 import {
   insertReference,
@@ -27,62 +21,19 @@ import {
   updateReferencesAfterRenumber,
 } from "../Section/utils/word-crossref-utils";
 
+import { StepBody, Hint, SubHeading, Group, Actions, Status } from "../ui/StepUI";
+
 const useStyles = makeStyles({
-  panel: {
-    display: "flex",
-    flexDirection: "column",
-    gap: tokens.spacingVerticalM,
-    padding: tokens.spacingHorizontalM,
-  },
-  sectionTitle: {
-    marginTop: tokens.spacingVerticalL,
-    marginBottom: 0,
-  },
-  row: {
-    display: "flex",
-    flexDirection: "column",
-    gap: tokens.spacingVerticalXS,
-  },
-  buttonRow: {
-    display: "flex",
-    gap: tokens.spacingHorizontalS,
-    flexWrap: "wrap",
-  },
-  buttonRow2: {
-    display: "flex",
-    gap: tokens.spacingVerticalL,
-    flexWrap: "wrap",
-    marginTop: "10px",
-  },
   issuesList: {
     margin: 0,
-    paddingLeft: tokens.spacingHorizontalL,
+    paddingLeft: "18px",
     color: tokens.colorPaletteRedForeground1,
     fontSize: tokens.fontSizeBase200,
-    marginTop: "10px",
   },
-  ContentWrapper: {
-    paddingLeft: "10px",
-  },
-  contentCover: {
-    paddingLeft: "25px",
-  },
-  heading: {
-    color: "white",
-    fontSize: "20px",
-  },
-  label: {
-    marginBottom: "10px",
-  },
-  wrapButtonSize: {
-    display: "flex",
-    justifyContent: "flex-end",
-    marginRight: "40px",
-    maxWidth: "250px",
-    minWidth: "250px",
-  },
-  messageBar: {
-    marginTop: "10px",
+  twoCol: {
+    display: "grid",
+    gridTemplateColumns: "1fr 1fr",
+    gap: "8px",
   },
 });
 
@@ -121,6 +72,8 @@ export default function CaptionCrossRefPanel() {
     }
     runInWord(async (context) => {
       const result = await insertCaption(context, captionType, captionText);
+      // Adding a caption mid-chapter shifts the later ones; keep their references right.
+      await updateReferencesAfterRenumber(context, captionType, result.numberMap);
       setStatus9({ intent: "success", text: `Inserted: ${result.text}` });
       setCaptionText("");
     });
@@ -165,10 +118,10 @@ export default function CaptionCrossRefPanel() {
     });
   };
 
-  const numberFromBookmark = (bookmarkName) => {
-    const match = bookmarkName && bookmarkName.match(/_(\d+)$/);
-    return match ? parseInt(match[1], 10) : null;
-  };
+  // "Figure_3_1" -> "3.1"
+  const numberFromBookmark = (bookmarkName) => bookmarkToNumber(refType, bookmarkName);
+  const refLabel = (bookmarkName) =>
+    `${refType === "figure" ? "Figure" : "Table"} ${numberFromBookmark(bookmarkName) || ""}`;
 
   const handleInsertReference = () => {
     const number = numberFromBookmark(selectedRef);
@@ -189,19 +142,25 @@ export default function CaptionCrossRefPanel() {
     }
     runInWord(async (context) => {
       await navigateToBookmark(context, selectedRef);
-      setStatus({ intent: "success", text: `Navigated to ${selectedRef}.` });
+      setStatus({ intent: "success", text: `Navigated to ${refLabel(selectedRef)}.` });
     });
   };
 
-  return (
-    <div className={styles.ContentWrapper}>
-      <h3 className={styles.heading}>9) Caption Automation</h3>
+  const typeLabel = (t) => (t === "figure" ? "Figure" : "Table");
 
-      <div className={styles.contentCover}>
-        <div className={styles.label}>
+  return (
+    <StepBody>
+      <Group>
+        <SubHeading>Insert a caption</SubHeading>
+        <Hint>
+          Put the cursor on the picture&apos;s line (or inside the table), then insert. Numbers follow
+          the chapter: the first figure in Chapter 3 is Figure 3.1. A table caption goes above the
+          table, a figure caption below it.
+        </Hint>
+        <div className={styles.twoCol}>
           <Field label="Type">
             <Dropdown
-              value={captionType === "figure" ? "Figure" : "Table"}
+              value={typeLabel(captionType)}
               selectedOptions={[captionType]}
               onOptionSelect={(_, data) => setCaptionType(data.optionValue)}
             >
@@ -210,29 +169,26 @@ export default function CaptionCrossRefPanel() {
             </Dropdown>
           </Field>
         </div>
-
-        <div className={styles.label}>
-          <Field label="Caption text">
-            <Input
-              value={captionText}
-              onChange={(_, data) => setCaptionText(data.value)}
-              placeholder="e.g. System architecture diagram"
-            />
-          </Field>
-        </div>
-
-        <div className={styles.buttonRow}>
-          <Button appearance="primary" onClick={handleInsertCaption}>
-            Insert Caption
+        <Field label="Caption text">
+          <Input
+            value={captionText}
+            onChange={(_, data) => setCaptionText(data.value)}
+            placeholder="e.g. System architecture diagram"
+          />
+        </Field>
+        <Actions stretch>
+          <Button appearance="primary" icon={<Add20Regular />} onClick={handleInsertCaption}>
+            Insert {typeLabel(captionType)} Caption
           </Button>
-          <Button appearance="secondary" onClick={handleRenumber}>
+        </Actions>
+        <div className={styles.twoCol}>
+          <Button size="small" icon={<NumberSymbol20Regular />} onClick={handleRenumber}>
             Renumber All
           </Button>
-          <Button appearance="secondary" onClick={handleValidate}>
-            Validate Captions
+          <Button size="small" icon={<CheckmarkStarburst20Regular />} onClick={handleValidate}>
+            Check
           </Button>
         </div>
-
         {issues.length > 0 && (
           <ul className={styles.issuesList}>
             {issues.map((issue, i) => (
@@ -240,43 +196,21 @@ export default function CaptionCrossRefPanel() {
             ))}
           </ul>
         )}
-
         {status9 && (
-          <MessageBar
-            intent={status9.intent === "warning" ? "warning" : status9.intent}
-            className={styles.messageBar}
-          >
-            <MessageBarBody>
-              <MessageBarTitle>
-                {status9.intent === "error"
-                  ? "Error"
-                  : status9.intent === "warning"
-                    ? "Notice"
-                    : "Status"}
-              </MessageBarTitle>
-              {status9.text}
-            </MessageBarBody>
-            <MessageBarActions
-              containerAction={
-                <Button
-                  appearance="transparent"
-                  icon={<Dismiss16Regular />}
-                  aria-label="Dismiss"
-                  onClick={() => setStatus9(null)}
-                />
-              }
-            />
-          </MessageBar>
+          <Status text={status9.text} tone={status9.intent} onDismiss={() => setStatus9(null)} />
         )}
-      </div>
+      </Group>
 
-      <h3 className={styles.heading}>10) Cross Referencing</h3>
-
-      <div className={styles.contentCover}>
-        <div className={styles.label}>
-          <Field label="Reference type">
+      <Group>
+        <SubHeading>Cross-reference</SubHeading>
+        <Hint>
+          Adds a clickable &quot;see Figure 3.1&quot; at the cursor that jumps to the caption. Load the
+          captions first, then pick one.
+        </Hint>
+        <div className={styles.twoCol}>
+          <Field label="Type">
             <Dropdown
-              value={refType === "figure" ? "Figure" : "Table"}
+              value={typeLabel(refType)}
               selectedOptions={[refType]}
               onOptionSelect={(_, data) => {
                 setRefType(data.optionValue);
@@ -289,69 +223,40 @@ export default function CaptionCrossRefPanel() {
             </Dropdown>
           </Field>
         </div>
-
-        <div className={styles.buttonRow2}>
-          <Button appearance="secondary" onClick={handleRefreshRefs}>
-            Refresh Available Captions
+        <Actions stretch>
+          <Button icon={<ArrowSync20Regular />} onClick={handleRefreshRefs}>
+            Load {typeLabel(refType)} Captions
           </Button>
-        </div>
+        </Actions>
+
         {availableRefs.length > 0 && (
           <>
-            <div className={styles.label}>
-              <Field label="Select caption">
-                <Dropdown
-                  value={selectedRef.replace("_", " ")}
-                  selectedOptions={selectedRef ? [selectedRef] : []}
-                  onOptionSelect={(_, data) => setSelectedRef(data.optionValue)}
-                >
-                  {availableRefs.map((name) => (
-                    <Option key={name} value={name}>
-                      {name.replace("_", " ")}
-                    </Option>
-                  ))}
-                </Dropdown>
-              </Field>
-            </div>
-
-            <div className={styles.buttonRow2}>
-              <Button appearance="primary" onClick={handleInsertReference}>
-                Insert Reference
-              </Button>
-              <Button appearance="secondary" onClick={handleGoTo}>
+            <Field label="Caption">
+              <Dropdown
+                value={selectedRef ? refLabel(selectedRef) : ""}
+                selectedOptions={selectedRef ? [selectedRef] : []}
+                onOptionSelect={(_, data) => setSelectedRef(data.optionValue)}
+              >
+                {availableRefs.map((name) => (
+                  <Option key={name} value={name}>
+                    {refLabel(name)}
+                  </Option>
+                ))}
+              </Dropdown>
+            </Field>
+            <Actions>
+              <Button appearance="subtle" icon={<ArrowRight20Regular />} onClick={handleGoTo}>
                 Go To
               </Button>
-            </div>
+              <Button appearance="primary" icon={<Link20Regular />} onClick={handleInsertReference}>
+                Insert Reference
+              </Button>
+            </Actions>
           </>
         )}
 
-        {status && (
-          <MessageBar
-            intent={status.intent === "warning" ? "warning" : status.intent}
-            className={styles.messageBar}
-          >
-            <MessageBarBody>
-              <MessageBarTitle>
-                {status.intent === "error"
-                  ? "Error"
-                  : status.intent === "warning"
-                    ? "Notice"
-                    : "Status"}
-              </MessageBarTitle>
-              {status.text}
-            </MessageBarBody>
-            <MessageBarActions
-              containerAction={
-                <Button
-                  appearance="transparent"
-                  icon={<Dismiss16Regular />}
-                  aria-label="Dismiss"
-                  onClick={() => setStatus(null)}
-                />
-              }
-            />
-          </MessageBar>
-        )}
-      </div>
-    </div>
+        {status && <Status text={status.text} tone={status.intent} onDismiss={() => setStatus(null)} />}
+      </Group>
+    </StepBody>
   );
 }

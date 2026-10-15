@@ -1,58 +1,28 @@
 import React, { useState } from "react";
-import { makeStyles, Button, Input, Text, Field } from "@fluentui/react-components";
-import { TARGET_MARGIN } from "../Section/utils/margin";
+import { Button, Input, Field } from "@fluentui/react-components";
+import { StepBody, Hint, Actions, Status } from "../ui/StepUI";
 
 /* global Word */
 
-const useStyles = makeStyles({
-  ContentWrapper: {
-    paddingLeft: "10px",
-  },
-  heading: {
-    color: "white",
-    fontSize: "20px",
-  },
-  DeclarationWrapper: {
-    paddingLeft: "25px",
-    display: "flex",
-    flexDirection: "column",
-    gap: "10px",
-  },
-  button: {
-    marginTop: "10px",
-  },
-  wrapButtonSize: {
-    display: "flex",
-    justifyContent: "flex-end",
-    marginRight: "40px",
-  },
-  status: {
-    display: "block",
-    marginTop: "6px",
-    color: "#9fd89f",
-  },
-  errorStatus: {
-    display: "block",
-    marginTop: "6px",
-    color: "#ff8080",
-  },
-});
-
-const cmToPt = (cm) => cm * 28.346;
-
-// Right tab stop position for the Date/Name line: page width minus left and
-// right margins, so the name lands right at the text area's right edge -
-// matching the sample where the name sits flush right on the same line as
-// the date.
-const A4_WIDTH_PT = cmToPt(21);
-const NAME_TAB_STOP_PT = A4_WIDTH_PT - TARGET_MARGIN.left - TARGET_MARGIN.right;
+// One absolute tab, right-aligned at the right margin. Text after it ends
+// exactly at the right margin - the same edge as the right-aligned ID line.
+const RIGHT_TAB_OOXML =
+  '<pkg:package xmlns:pkg="http://schemas.microsoft.com/office/2006/xmlPackage">' +
+  '<pkg:part pkg:name="/_rels/.rels" pkg:contentType="application/vnd.openxmlformats-package.relationships+xml"><pkg:xmlData>' +
+  '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+  '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>' +
+  "</Relationships></pkg:xmlData></pkg:part>" +
+  '<pkg:part pkg:name="/word/document.xml" pkg:contentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"><pkg:xmlData>' +
+  '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p>' +
+  '<w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:cs="Arial"/><w:sz w:val="24"/><w:szCs w:val="24"/></w:rPr>' +
+  '<w:ptab w:relativeTo="margin" w:alignment="right" w:leader="none"/></w:r>' +
+  "</w:p></w:body></w:document></pkg:xmlData></pkg:part></pkg:package>";
 
 const DEFAULT_HEADING_TEXT = "DECLARATION";
 const DEFAULT_CONTENT_TEXT =
   "I hereby declare that the work in this thesis is my own except for quotations and summaries which have been duly acknowledged.";
 
 export default function Declaration() {
-  const styles = useStyles();
 
   const [date, setDate] = useState("");
   const [name, setName] = useState("");
@@ -60,66 +30,79 @@ export default function Declaration() {
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
 
-  // Builds the whole declaration skeleton once: a page break, the heading
-  // (pre-filled), the content paragraph (pre-filled), a shared date/name
-  // line with a right tab stop, and the ID line. Returns true if it just
-  // built the skeleton, false if it already existed.
+  // Builds the whole declaration skeleton once, on the page right after the
+  // Title Page: heading (pre-filled), content paragraph (pre-filled), a
+  // shared date/name line, and the ID line. Returns true if it just built
+  // the skeleton, false if it already existed.
+  //
+  // Vertical centring is a per-SECTION setting in Word, so the Declaration
+  // gets its own section, set to "Center", with the section after it set
+  // back to "Top":
+  //   section 3 = Title Page
+  //   section 4 = Declaration (vertically centred)
+  //   section 5 = everything after (normal top alignment)
+  // New sections copy section 3's page setup, so they keep the report
+  // margin, A4, header and footer, and the page numbering continues.
   async function ensureSkeleton(context) {
     const marker = context.document.getBookmarkRangeOrNullObject("bmDeclHeading");
+    marker.load("isNullObject");
     await context.sync();
     if (!marker.isNullObject) return false;
 
-    // Section break (not a plain page break) so Declaration can have its
-    // own vertical alignment. verticalAlignment is a per-SECTION property
-    // in Word — setting it on a shared section would also vertically
-    // center the Title Page before it (and anything after it), so
-    // Declaration needs to live in its own section to be centered on its
-    // own. This does mean an extra sync round-trip to grab a reference to
-    // the newly created section, which the previous single-page-break
-    // version didn't need.
-    // context.document.body.insertBreak(Word.BreakType.sectionNext, Word.InsertLocation.end);
+    const titlePageEnd = context.document.getBookmarkRangeOrNullObject("bmTpMonthYear");
+    titlePageEnd.load("isNullObject");
     await context.sync();
-
-    const sectionsBefore = context.document.sections;
-    sectionsBefore.load("items");
-    await context.sync();
-    const declarationSection = sectionsBefore.items[sectionsBefore.items.length - 1];
-
-    // This is the actual "center of the page, vertically" setting.
-    // Its docs page is only published under Microsoft's preview API
-    // set, same as tabStops earlier, so it's wrapped defensively —
-    // if it's unsupported in this Word build/host, Declaration still
-    // gets created, just without vertical centering.
-    try {
-      declarationSection.pageSetup.verticalAlignment = "Center";
-      await context.sync();
-    } catch (vAlignError) {
-      console.warn(
-        "Section vertical alignment is not supported in this Word version/host — Declaration will use normal top alignment.",
-        vAlignError
+    if (titlePageEnd.isNullObject) {
+      throw new Error(
+        "Set up the Title Page first (click Set Format on the Title Page). The Declaration goes on the page after it."
       );
     }
 
-    const heading = context.document.body.insertParagraph(
+    const lastTitleLine = titlePageEnd.paragraphs.getFirst();
+
+    // The Title Page ends with a page break, in the paragraph right after
+    // its "MONTH YEAR" line. Remove it - the section break below starts the
+    // next page instead; keeping both would leave a blank page in between.
+    const breakPara = lastTitleLine.getNextOrNullObject();
+    breakPara.load("isNullObject,text");
+    await context.sync();
+    if (!breakPara.isNullObject && breakPara.text.replace(/[\f\s]/g, "") === "") {
+      breakPara.delete();
+    }
+
+    // End the Title Page section here; the Declaration starts section 4.
+    lastTitleLine.insertBreak(Word.BreakType.sectionNext, Word.InsertLocation.after);
+    await context.sync();
+
+    const sections = context.document.sections;
+    sections.load("items");
+    await context.sync();
+    if (sections.items.length < 4) {
+      throw new Error("Could not create the Declaration section. Try again.");
+    }
+    const declarationSection = sections.items[3];
+
+    // Build top to bottom at the start of section 4.
+    const heading = declarationSection.body.insertParagraph(
       DEFAULT_HEADING_TEXT,
-      Word.InsertLocation.end
+      Word.InsertLocation.start
     );
     heading.font.name = "Arial";
     heading.font.bold = true;
+    heading.font.italic = false;
     heading.font.size = 12;
+    heading.font.color = "#000000";
     heading.font.allCaps = true;
     heading.alignment = "Centered";
-    heading.spaceBefore = 226.8;
+    heading.spaceBefore = 0; // vertical centring positions the block
     heading.spaceAfter = 0;
     heading.getRange().insertBookmark("bmDeclHeading");
 
-    const content = context.document.body.insertParagraph(
-      DEFAULT_CONTENT_TEXT,
-      Word.InsertLocation.end
-    );
+    const content = heading.insertParagraph(DEFAULT_CONTENT_TEXT, Word.InsertLocation.after);
     content.font.name = "Arial";
     content.font.bold = false;
     content.font.size = 12;
+    content.font.color = "#000000";
     content.font.allCaps = false;
     content.alignment = "Left";
     content.spaceBefore = 28;
@@ -129,63 +112,69 @@ export default function Declaration() {
     // Shared date/name line: paragraph starts as just a tab character, with
     // a right tab stop so whatever gets typed into "Name" lands flush right,
     // and a bookmark at each end so Date and Name can be filled independently.
-    const dateNameLine = context.document.body.insertParagraph("\t", Word.InsertLocation.end);
+    // Shared date/name line: date on the left, name pushed to the right
+    // margin by an absolute right-aligned tab (w:ptab), so the name ends at
+    // the same right edge as the right-aligned Student ID line below it.
+    // (paragraphFormat.tabStops isn't available in this Word version, which
+    // is why the name used to sit right after the date.)
+    const dateNameLine = content.insertParagraph("", Word.InsertLocation.after);
     dateNameLine.font.name = "Arial";
+    dateNameLine.font.bold = false;
     dateNameLine.font.size = 12;
+    dateNameLine.font.color = "#000000";
     dateNameLine.alignment = "Left";
     dateNameLine.spaceBefore = 113.4;
     dateNameLine.spaceAfter = 0;
 
-    // paragraphFormat.tabStops is also a newer/preview Word JS API and may
-    // not be available depending on the Word build/version. Wrapped so a
-    // failure here doesn't take down anything queued after it.
-    try {
-      dateNameLine.paragraphFormat.tabStops.clear();
-      dateNameLine.paragraphFormat.tabStops.add(NAME_TAB_STOP_PT, Word.TabAlignment.right);
-    } catch (tabStopError) {
-      console.warn(
-        "Tab stops are not supported in this Word version/host — date/name line will use default tab behavior.",
-        tabStopError
-      );
+    const paragraphs = declarationSection.body.paragraphs;
+    paragraphs.load("items");
+    await context.sync();
+    const countBefore = paragraphs.items.length;
+
+    dateNameLine.getRange("Start").insertOoxml(RIGHT_TAB_OOXML, Word.InsertLocation.replace);
+    await context.sync();
+
+    // Inserting XML can leave an extra empty paragraph behind; remove it so
+    // the Student ID line stays directly under the name.
+    const check = declarationSection.body.paragraphs;
+    check.load("items");
+    await context.sync();
+    if (check.items.length > countBefore) {
+      const extra = dateNameLine.getNextOrNullObject();
+      extra.load("isNullObject,text");
+      await context.sync();
+      if (!extra.isNullObject && extra.text.trim() === "") extra.delete();
     }
 
+    // Date goes before the tab, name after it.
     dateNameLine.getRange("Start").insertBookmark("bmDeclDate");
     dateNameLine.getRange("End").insertBookmark("bmDeclName");
 
-    const idLine = context.document.body.insertParagraph("", Word.InsertLocation.end);
+    const idLine = dateNameLine.insertParagraph("", Word.InsertLocation.after);
     idLine.font.name = "Arial";
     idLine.font.size = 12;
     idLine.font.bold = false;
+    idLine.font.color = "#000000";
     idLine.alignment = "Right";
     idLine.spaceBefore = 0;
     idLine.spaceAfter = 0;
     idLine.getRange().insertBookmark("bmDeclId");
 
+    // End the Declaration section, so whatever comes next starts on a new
+    // page in section 5.
+    idLine.insertBreak(Word.BreakType.sectionNext, Word.InsertLocation.after);
     await context.sync();
 
-    // Close off the Declaration section with another section break, and
-    // reset the new section back to top alignment, so whatever gets
-    // added after Declaration (Acknowledgements, Abstract, etc.) isn't
-    // vertically centered too.
-
-    context.document.body.insertBreak(Word.BreakType.sectionNext, Word.InsertLocation.end);
+    const after = context.document.sections;
+    after.load("items");
     await context.sync();
 
-    const sectionsAfter = context.document.sections;
-    sectionsAfter.load("items");
-    await context.sync();
-    const nextSection = sectionsAfter.items[sectionsAfter.items.length - 1];
-
-    try {
-      nextSection.pageSetup.verticalAlignment = "Top";
-      await context.sync();
-    } catch (vAlignError) {
-      console.warn(
-        "Could not reset vertical alignment for the section after Declaration.",
-        vAlignError
-      );
+    // Section 4 (Declaration) centred; section 5 onward back to top.
+    after.items[3].pageSetup.verticalAlignment = "Center";
+    for (let i = 4; i < after.items.length; i++) {
+      after.items[i].pageSetup.verticalAlignment = "Top";
     }
-
+    await context.sync();
     return true;
   }
 
@@ -237,47 +226,37 @@ export default function Declaration() {
   }
 
   return (
-    <div className={styles.ContentWrapper}>
-      <h2 className={styles.heading}>2) Declaration</h2>
-      <div className={styles.DeclarationWrapper}>
-        <p>Show Example Of Declaration Page.</p>
-        <Text style={{ color: "#c7c7c7" }}>
-          The DECLARATION heading and sample sentence are generated automatically. Fill in your own
-          date, name, and student ID below, then click Set Format.
-        </Text>
+    <StepBody>
+      <Hint>
+        Creates the Declaration page right after the Title Page, centred on the page. The heading
+        and declaration sentence are added for you - just fill in the three details.
+      </Hint>
 
-        <Field label="Date">
-          <Input
-            placeholder="e.g. 29 May 2025"
-            value={date}
-            onChange={(_, data) => setDate(data.value)}
-          />
-        </Field>
+      <Field label="Date">
+        <Input placeholder="e.g. 29 May 2025" value={date} onChange={(_, data) => setDate(data.value)} />
+      </Field>
+      <Field label="Name">
+        <Input
+          placeholder="e.g. Arena bt Che Kasim"
+          value={name}
+          onChange={(_, data) => setName(data.value)}
+        />
+      </Field>
+      <Field label="Student ID">
+        <Input
+          placeholder="e.g. P10444"
+          value={studentId}
+          onChange={(_, data) => setStudentId(data.value)}
+        />
+      </Field>
 
-        <Field label="Name">
-          <Input
-            placeholder="e.g. Arena bt Che Kasim"
-            value={name}
-            onChange={(_, data) => setName(data.value)}
-          />
-        </Field>
-
-        <Field label="Student ID">
-          <Input
-            placeholder="e.g. P10444"
-            value={studentId}
-            onChange={(_, data) => setStudentId(data.value)}
-          />
-        </Field>
-
-        <div className={styles.wrapButtonSize}>
-          <Button className={styles.button} shape="circular" onClick={handleSetFormat}>
-            Set Format
-          </Button>
-        </div>
-        {status && <Text className={styles.status}>{status}</Text>}
-        {error && <Text className={styles.errorStatus}>Error: {error}</Text>}
-      </div>
-    </div>
+      <Actions>
+        <Button appearance="primary" onClick={handleSetFormat}>
+          Set Format
+        </Button>
+      </Actions>
+      <Status text={status} tone="success" />
+      <Status text={error} tone="error" />
+    </StepBody>
   );
 }

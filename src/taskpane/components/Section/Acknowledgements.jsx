@@ -1,30 +1,22 @@
 import React, { useState } from "react";
-import { makeStyles, Button, Text } from "@fluentui/react-components";
+import { makeStyles, tokens, Button, Text } from "@fluentui/react-components";
+import { StepBody, Hint, Actions, Status } from "../ui/StepUI";
 
 /* global Word */
 
 const useStyles = makeStyles({
-  ContentWrapper: {
-    paddingLeft: "10px",
-  },
-  heading: {
-    color: "white",
-    fontSize: "20px",
-  },
-  AcknowledgementsWrapper: {
-    paddingLeft: "25px",
-  },
-  description: {
-    marginBottom: "10px",
+  previewLabel: {
+    fontSize: tokens.fontSizeBase200,
+    fontWeight: tokens.fontWeightSemibold,
+    color: tokens.colorNeutralForeground2,
   },
   previewBox: {
-    border: "1px solid #4a4a4a",
-    borderRadius: "4px",
-    padding: "16px", // Balanced padding
-    marginBottom: "14px",
+    border: `1px solid ${tokens.colorNeutralStroke2}`,
+    borderRadius: tokens.borderRadiusMedium,
+    padding: "16px",
     maxHeight: "220px",
     overflowY: "auto",
-    backgroundColor: "#2b2b2b",
+    backgroundColor: tokens.colorNeutralBackground3,
   },
   previewHeading: {
     display: "block",
@@ -32,35 +24,13 @@ const useStyles = makeStyles({
     fontWeight: "bold",
     letterSpacing: "1px",
     marginBottom: "18px", // Matches Word spaceAfter spacing
-    color: "#ffffff",
   },
   previewParagraph: {
     display: "block",
     textAlign: "justify",
     fontSize: "12px",
     lineHeight: "1.5", // Simulates 1.5 spacing visually
-    color: "#d6d6d6",
-  },
-  wrapButtonSize: {
-    display: "flex",
-    justifyContent: "flex-end",
-    marginRight: "40px",
-    maxWidth: "250px",
-    minWidth: "250px",
-  },
-  button: {
-    marginTop: "10px",
-  },
-  statusText: {
-    display: "block",
-    marginTop: "8px",
-    fontSize: "12px",
-  },
-  statusSuccess: {
-    color: "#3fbf60",
-  },
-  statusError: {
-    color: "#e04b4b",
+    color: tokens.colorNeutralForeground2,
   },
 });
 
@@ -209,40 +179,25 @@ function Acknowledgements() {
   }
 
   return (
-    <div className={styles.ContentWrapper}>
-      <h2 className={styles.heading}>3) Acknowledgements</h2>
-      <div className={styles.AcknowledgementsWrapper}>
-        <p className={styles.description}>
-          Click "Set Format" to auto-generate the Acknowledgements page at your cursor position.
-        </p>
+    <StepBody>
+      <Hint>
+        Adds the Acknowledgements page with this sample text, formatted to the UPTM style. Replace
+        the [bracketed] parts with your own details in Word.
+      </Hint>
 
-        <div className={styles.previewBox}>
-          <Text className={styles.previewHeading}>ACKNOWLEDGEMENTS</Text>
-          <Text className={styles.previewParagraph}>{SAMPLE_PARAGRAPHS}</Text>
-        </div>
-
-        <div className={styles.wrapButtonSize}>
-          <Button
-            className={styles.button}
-            shape="circular"
-            appearance="primary"
-            onClick={handleSetFormat}
-          >
-            Set Format
-          </Button>
-        </div>
-
-        {status && (
-          <Text
-            className={`${styles.statusText} ${
-              status.type === "success" ? styles.statusSuccess : styles.statusError
-            }`}
-          >
-            {status.message}
-          </Text>
-        )}
+      <Text className={styles.previewLabel}>Preview</Text>
+      <div className={styles.previewBox}>
+        <Text className={styles.previewHeading}>ACKNOWLEDGEMENTS</Text>
+        <Text className={styles.previewParagraph}>{SAMPLE_PARAGRAPHS}</Text>
       </div>
-    </div>
+
+      <Actions>
+        <Button appearance="primary" onClick={handleSetFormat}>
+          Set Format
+        </Button>
+      </Actions>
+      {status && <Status text={status.message} tone={status.type === "success" ? "success" : "error"} />}
+    </StepBody>
   );
 }
 

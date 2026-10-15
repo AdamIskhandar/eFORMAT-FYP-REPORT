@@ -2,10 +2,10 @@
 <OfficeApp xmlns="http://schemas.microsoft.com/office/appforoffice/1.1" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:bt="http://schemas.microsoft.com/office/officeappbasictypes/1.0" xmlns:ov="http://schemas.microsoft.com/office/taskpaneappversionoverrides" xsi:type="TaskPaneApp">
   <Id>8fb984e4-560b-401f-a8b9-59e4bad93e8d</Id>
   <Version>1.0.0.0</Version>
-  <ProviderName>Contoso</ProviderName>
+  <ProviderName>eFormat UPTM</ProviderName>
   <DefaultLocale>en-US</DefaultLocale>
-  <DisplayName DefaultValue="REPORT FYP TEMPLATE UPTM"/>
-  <Description DefaultValue="A template to get started."/>
+  <DisplayName DefaultValue="eFormat FYP Report"/>
+  <Description DefaultValue="Formats your Final Year Project report to the UPTM guidelines: cover, title page, declaration, contents, captions and content."/>
   <IconUrl DefaultValue="https://localhost:3000/assets/icon-32.png"/>
   <HighResolutionIconUrl DefaultValue="https://localhost:3000/assets/icon-64.png"/>
   <SupportUrl DefaultValue="https://www.contoso.com/help"/>
@@ -72,13 +72,13 @@
         <bt:Url id="Taskpane.Url" DefaultValue="https://localhost:3000/taskpane.html"/>
       </bt:Urls>
       <bt:ShortStrings>
-        <bt:String id="GetStarted.Title" DefaultValue="Get started with your sample add-in!"/>
-        <bt:String id="CommandsGroup.Label" DefaultValue="Commands Group"/>
-        <bt:String id="TaskpaneButton.Label" DefaultValue="Show Task Pane"/>
+        <bt:String id="GetStarted.Title" DefaultValue="eFormat FYP Report is ready"/>
+        <bt:String id="CommandsGroup.Label" DefaultValue="UPTM eFormat"/>
+        <bt:String id="TaskpaneButton.Label" DefaultValue="eFormat FYP"/>
       </bt:ShortStrings>
       <bt:LongStrings>
-        <bt:String id="GetStarted.Description" DefaultValue="Your sample add-in loaded successfully. Go to the HOME tab and click the 'Show Task Pane' button to get started."/>
-        <bt:String id="TaskpaneButton.Tooltip" DefaultValue="Click to Show a Task Pane"/>
+        <bt:String id="GetStarted.Description" DefaultValue="Go to the Home tab and click eFormat FYP to open the report formatting steps."/>
+        <bt:String id="TaskpaneButton.Tooltip" DefaultValue="Open eFormat FYP Report to format your report to the UPTM guidelines."/>
       </bt:LongStrings>
     </Resources>
   </VersionOverrides>

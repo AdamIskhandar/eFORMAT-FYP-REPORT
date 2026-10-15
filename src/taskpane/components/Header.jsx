@@ -1,72 +1,50 @@
 import * as React from "react";
-import PropTypes from "prop-types";
-import { Image, tokens, makeStyles } from "@fluentui/react-components";
+import { tokens, makeStyles, Text } from "@fluentui/react-components";
 import backgroundImage from "../../../assets/banner.png";
 
 const useStyles = makeStyles({
-  welcome__header: {
+  header: {
     display: "flex",
     flexDirection: "column",
-    alignItems: "center",
-    paddingTop: "20px",
-    paddingLeft: "10px",
-    paddingRight: "10px",
-    position: "relative",
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "center",
-    justifyContent: "center",
+    gap: "10px",
+    padding: "12px 12px 6px 12px",
   },
-  background: {
-    position: "absolute",
-    top: 0,
-    left: 0,
+  banner: {
     width: "100%",
     height: "130px",
+    borderRadius: tokens.borderRadiusXLarge,
     backgroundImage: `url(${backgroundImage})`,
     backgroundRepeat: "no-repeat",
     backgroundPosition: "center",
     backgroundSize: "cover",
-    // filter: "blur(4px)",
-    // backgroundColor: "rgba(0,0,0,0.1)",
-    // backgroundBlendMode: "darken",
-    // zIndex: 0,
+    boxShadow: tokens.shadow8,
   },
-  message: {
-    fontSize: "clamp(1.2rem, 2vw + 0.5rem, 1.5rem)",
-    fontWeight: tokens.fontWeightRegular,
-    color: "white",
-    textAlign: "center",
+  titles: {
+    display: "flex",
+    flexDirection: "column",
+    padding: "0 4px",
+  },
+  title: {
+    fontSize: tokens.fontSizeBase500,
     fontWeight: tokens.fontWeightBold,
-    paddingTop: "15px",
-    // backgroundColor: "rgba(0, 0, 0, 0.5)",
-    // borderRadius: "8px",
-    // backdropFilter: "blur(2px)",
-    zIndex: 3,
+    color: tokens.colorNeutralForeground1,
   },
-
-  image: {
-    zIndex: 2,
+  subtitle: {
+    fontSize: tokens.fontSizeBase200,
+    color: tokens.colorNeutralForeground3,
   },
 });
 
-// improvementtss
-
-// 1) submit report via add ins - RM 3k
-// 2) submit progress report via add ins - RM 4k
-// 3) sign page for security - RM 5k
-
-const Header = (props) => {
-  const { title, logo, message } = props;
+const Header = () => {
   const styles = useStyles();
-
   return (
-    <section className={styles.welcome__header}>
-      <div className={styles.background}></div>
-      {/* <Image width="300" src={logo} alt={title} className={styles.image} /> */}
-      {/* <h1 className={styles.message}>{message}</h1> */}
-      <br />
-    </section>
+    <header className={styles.header}>
+      <div className={styles.banner} role="img" aria-label="UPTM eFormat FYP Report" />
+      <div className={styles.titles}>
+        <Text className={styles.title}>Report FYP Template</Text>
+        <Text className={styles.subtitle}>Formats your FYP report to the UPTM guidelines</Text>
+      </div>
+    </header>
   );
 };
 
