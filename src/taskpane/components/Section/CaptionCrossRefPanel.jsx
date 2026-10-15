@@ -5,7 +5,6 @@ import {
   NumberSymbol20Regular,
   CheckmarkStarburst20Regular,
   ArrowSync20Regular,
-  Link20Regular,
   ArrowRight20Regular,
 } from "@fluentui/react-icons";
 import {
@@ -15,7 +14,6 @@ import {
   bookmarkToNumber,
 } from "../Section/utils/word-caption-utils";
 import {
-  insertReference,
   listBookmarks,
   navigateToBookmark,
   updateReferencesAfterRenumber,
@@ -32,7 +30,7 @@ const useStyles = makeStyles({
   },
   twoCol: {
     display: "grid",
-    gridTemplateColumns: "1fr 1fr",
+    gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)",
     gap: "8px",
   },
 });
@@ -123,18 +121,6 @@ export default function CaptionCrossRefPanel() {
   const refLabel = (bookmarkName) =>
     `${refType === "figure" ? "Figure" : "Table"} ${numberFromBookmark(bookmarkName) || ""}`;
 
-  const handleInsertReference = () => {
-    const number = numberFromBookmark(selectedRef);
-    if (!number) {
-      setStatus({ intent: "warning", text: "Refresh and pick a caption to reference first." });
-      return;
-    }
-    runInWord(async (context) => {
-      await insertReference(context, refType, number, "see ");
-      setStatus({ intent: "success", text: `Inserted reference to ${refType} ${number}.` });
-    });
-  };
-
   const handleGoTo = () => {
     if (!selectedRef) {
       setStatus({ intent: "warning", text: "Refresh and pick a caption first." });
@@ -157,8 +143,7 @@ export default function CaptionCrossRefPanel() {
           the chapter: the first figure in Chapter 3 is Figure 3.1. A table caption goes above the
           table, a figure caption below it.
         </Hint>
-        <div className={styles.twoCol}>
-          <Field label="Type">
+        <Field label="Type">
             <Dropdown
               value={typeLabel(captionType)}
               selectedOptions={[captionType]}
@@ -168,12 +153,11 @@ export default function CaptionCrossRefPanel() {
               <Option value="table">Table</Option>
             </Dropdown>
           </Field>
-        </div>
         <Field label="Caption text">
           <Input
             value={captionText}
             onChange={(_, data) => setCaptionText(data.value)}
-            placeholder="e.g. System architecture diagram"
+            placeholder="e.g. System architecture"
           />
         </Field>
         <Actions stretch>
@@ -183,7 +167,7 @@ export default function CaptionCrossRefPanel() {
         </Actions>
         <div className={styles.twoCol}>
           <Button size="small" icon={<NumberSymbol20Regular />} onClick={handleRenumber}>
-            Renumber All
+            Renumber
           </Button>
           <Button size="small" icon={<CheckmarkStarburst20Regular />} onClick={handleValidate}>
             Check
@@ -202,13 +186,9 @@ export default function CaptionCrossRefPanel() {
       </Group>
 
       <Group>
-        <SubHeading>Cross-reference</SubHeading>
-        <Hint>
-          Adds a clickable &quot;see Figure 3.1&quot; at the cursor that jumps to the caption. Load the
-          captions first, then pick one.
-        </Hint>
-        <div className={styles.twoCol}>
-          <Field label="Type">
+        <SubHeading>Find a caption</SubHeading>
+        <Hint>Jump straight to any figure or table caption in your report. Load the captions, pick one, then click Go To Caption.</Hint>
+        <Field label="Type">
             <Dropdown
               value={typeLabel(refType)}
               selectedOptions={[refType]}
@@ -222,7 +202,6 @@ export default function CaptionCrossRefPanel() {
               <Option value="table">Table</Option>
             </Dropdown>
           </Field>
-        </div>
         <Actions stretch>
           <Button icon={<ArrowSync20Regular />} onClick={handleRefreshRefs}>
             Load {typeLabel(refType)} Captions
@@ -245,11 +224,8 @@ export default function CaptionCrossRefPanel() {
               </Dropdown>
             </Field>
             <Actions>
-              <Button appearance="subtle" icon={<ArrowRight20Regular />} onClick={handleGoTo}>
-                Go To
-              </Button>
-              <Button appearance="primary" icon={<Link20Regular />} onClick={handleInsertReference}>
-                Insert Reference
+              <Button appearance="primary" icon={<ArrowRight20Regular />} onClick={handleGoTo}>
+                Go To Caption
               </Button>
             </Actions>
           </>

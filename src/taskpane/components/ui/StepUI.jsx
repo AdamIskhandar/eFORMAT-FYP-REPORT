@@ -30,6 +30,15 @@ const useStyles = makeStyles({
     flexDirection: "column",
     gap: "12px",
     padding: "4px 4px 12px 4px",
+    minWidth: 0,
+    // Fluent's Dropdown has a fixed 250px min-width, wider than the task
+    // pane - make every field fill (and never overflow) its column instead.
+    "& .fui-Dropdown, & .fui-Input, & .fui-Combobox, & .fui-Field": {
+      minWidth: 0,
+      width: "100%",
+      maxWidth: "100%",
+      boxSizing: "border-box",
+    },
   },
   hint: {
     display: "block",
@@ -66,6 +75,7 @@ const useStyles = makeStyles({
     display: "flex",
     flexDirection: "column",
     gap: "10px",
+    minWidth: 0,
     padding: "12px",
     borderRadius: tokens.borderRadiusLarge,
     backgroundColor: tokens.colorNeutralBackground2,

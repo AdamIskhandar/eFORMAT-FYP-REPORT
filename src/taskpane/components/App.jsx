@@ -144,7 +144,7 @@ const GROUPS = [
   {
     label: "Figures & tables",
     steps: [
-      { id: "captions", title: "Captions & Cross-references", subtitle: "Insert Figure 3.1 / Table 3.1 captions", Component: CaptionCrossRefPanel },
+      { id: "captions", title: "Captions", subtitle: "Insert Figure 3.1 / Table 3.1 captions", Component: CaptionCrossRefPanel },
       { id: "lists", title: "List of Figures & Tables", subtitle: "Numbered by chapter, with page numbers", Component: CaptionLists },
     ],
   },
