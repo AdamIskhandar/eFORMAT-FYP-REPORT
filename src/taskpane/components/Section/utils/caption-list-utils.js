@@ -173,11 +173,16 @@ async function getOrCreateListBlock(context, cfg) {
 
   let heading = null;
   if (!existing.isNullObject) {
-    const para = existing.paragraphs.getFirst();
-    para.load("text");
+    // Find this list's heading WORDS anywhere in the bookmark: Word can
+    // stretch the bookmark over a list inserted in front of it, so its
+    // first paragraph may be the OTHER list's heading.
+    const hits = existing.search(cfg.headingText, { matchCase: false });
+    hits.load("items");
     await context.sync();
-    if (para.text.trim().toUpperCase() === cfg.headingText) {
-      heading = para;
+    if (hits.items.length > 0) {
+      heading = hits.items[0].paragraphs.getFirst();
+      hits.items[0].insertBookmark(cfg.headingBookmark); // re-pin on the words
+      await context.sync();
     } else {
       context.document.deleteBookmark(cfg.headingBookmark);
       await context.sync();
@@ -232,7 +237,12 @@ async function getOrCreateListBlock(context, cfg) {
   heading.firstLineIndent = 0;
   heading.spaceBefore = 0;
   heading.spaceAfter = 18;
-  heading.getRange("Content").insertBookmark(cfg.headingBookmark);
+  // Bookmark the heading WORDS only (never a page break in front of them),
+  // so the Contents shows the right page for this list.
+  const words = heading.search(cfg.headingText, { matchCase: false });
+  words.load("items");
+  await context.sync();
+  (words.items[0] || heading.getRange("Content")).insertBookmark(cfg.headingBookmark);
 
   const endLine = heading.insertParagraph("", "After");
   formatEndLine(endLine);

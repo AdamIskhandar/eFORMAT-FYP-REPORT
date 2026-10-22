@@ -1,5 +1,5 @@
 import React from "react";
-import { Dismiss16Regular } from "@fluentui/react-icons";
+import { Dismiss16Regular, ChevronDown16Regular, ChevronRight16Regular } from "@fluentui/react-icons";
 import {
   makeStyles,
   tokens,
@@ -91,6 +91,12 @@ const useStyles = makeStyles({
   table: {
     width: "100%",
   },
+  tableToggle: {
+    paddingLeft: "0",
+    minWidth: 0,
+    fontWeight: tokens.fontWeightSemibold,
+    color: tokens.colorNeutralForeground2,
+  },
   busy: {
     display: "flex",
     flexDirection: "column",
@@ -115,11 +121,74 @@ const useStyles = makeStyles({
   cellFormat: {
     color: tokens.colorNeutralForeground2,
   },
+  guide: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "6px",
+    padding: "8px 12px",
+    borderRadius: tokens.borderRadiusMedium,
+    backgroundColor: tokens.colorNeutralBackground3,
+    border: `1px solid ${tokens.colorNeutralStroke2}`,
+  },
+  guideToggle: {
+    justifyContent: "flex-start",
+    padding: "0",
+    minWidth: 0,
+    height: "auto",
+    fontSize: tokens.fontSizeBase200,
+    fontWeight: tokens.fontWeightSemibold,
+    color: tokens.colorNeutralForeground1,
+  },
+  guideList: {
+    margin: 0,
+    paddingLeft: "18px",
+    display: "flex",
+    flexDirection: "column",
+    gap: "4px",
+    fontSize: tokens.fontSizeBase200,
+    lineHeight: tokens.lineHeightBase200,
+    color: tokens.colorNeutralForeground2,
+  },
+  guideNote: {
+    fontSize: tokens.fontSizeBase200,
+    color: tokens.colorNeutralForeground3,
+  },
 });
 
 export function StepBody({ children }) {
   const styles = useStyles();
   return <div className={styles.body}>{children}</div>;
+}
+
+// "How to use" box: numbered steps and an optional note. Collapsed by
+// default - click the title to open or close it.
+export function GuideSteps({ title = "How to use", steps, note, defaultOpen = false }) {
+  const styles = useStyles();
+  const [open, setOpen] = React.useState(defaultOpen);
+  return (
+    <div className={styles.guide}>
+      <Button
+        appearance="transparent"
+        size="small"
+        className={styles.guideToggle}
+        icon={open ? <ChevronDown16Regular /> : <ChevronRight16Regular />}
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+      >
+        {title}
+      </Button>
+      {open && (
+        <>
+          <ol className={styles.guideList}>
+            {steps.map((step, i) => (
+              <li key={i}>{step}</li>
+            ))}
+          </ol>
+          {note && <span className={styles.guideNote}>{note}</span>}
+        </>
+      )}
+    </div>
+  );
 }
 
 export function Hint({ children }) {
@@ -181,27 +250,41 @@ export function Notice({ children, tone = "warning" }) {
 }
 
 // rows: [{ element, format }]
-export function GuideTable({ title, rows }) {
+// Collapsed by default: a small "Show ... format" button opens the table.
+export function GuideTable({ title, rows, defaultOpen = false }) {
   const styles = useStyles();
+  const [open, setOpen] = React.useState(defaultOpen);
+  const label = title || "Format guide";
   return (
     <div>
-      {title && <Text className={styles.tableTitle}>{title}</Text>}
-      <Table size="extra-small" aria-label={title || "Format guide"} className={styles.table}>
-        <TableHeader>
-          <TableRow>
-            <TableHeaderCell>Element</TableHeaderCell>
-            <TableHeaderCell>Format</TableHeaderCell>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {rows.map((r) => (
-            <TableRow key={r.element}>
-              <TableCell>{r.element}</TableCell>
-              <TableCell className={styles.cellFormat}>{r.format}</TableCell>
+      <Button
+        appearance="subtle"
+        size="small"
+        className={styles.tableToggle}
+        icon={open ? <ChevronDown16Regular /> : <ChevronRight16Regular />}
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+      >
+        {label}
+      </Button>
+      {open && (
+        <Table size="extra-small" aria-label={label} className={styles.table}>
+          <TableHeader>
+            <TableRow>
+              <TableHeaderCell>Element</TableHeaderCell>
+              <TableHeaderCell>Format</TableHeaderCell>
             </TableRow>
-          ))}
-        </TableBody>
-      </Table>
+          </TableHeader>
+          <TableBody>
+            {rows.map((r) => (
+              <TableRow key={r.element}>
+                <TableCell>{r.element}</TableCell>
+                <TableCell className={styles.cellFormat}>{r.format}</TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      )}
     </div>
   );
 }
@@ -212,6 +295,7 @@ export function GuideTable({ title, rows }) {
  *   <Button disabled={busy.active} onClick={busy.wrap("Generating...", handleGenerate, { settle: 4200 })}>
  *   <BusyBar busy={busy} />
  * wrap() runs the handler unchanged; it only shows the bar while it runs.
+ * If the handler returns false (nothing changed), the settle phase is skipped.
  * `settle` keeps a second "finishing" phase on screen for that many ms
  * after the handler returns (e.g. while page numbers refresh).
  */
@@ -225,10 +309,13 @@ export function useBusy() {
     async (...args) => {
       clearTimeout(timer.current);
       setState({ label, phase: "working", group });
+      let result;
       try {
-        await handler(...args);
+        result = await handler(...args);
       } finally {
-        if (settle > 0) {
+        // A handler that returns false changed nothing (e.g. a missing
+        // title), so there is nothing to wait for - no "finishing" phase.
+        if (settle > 0 && result !== false) {
           setState({ label: settleLabel, phase: "settling", group });
           timer.current = setTimeout(() => setState(null), settle);
         } else {

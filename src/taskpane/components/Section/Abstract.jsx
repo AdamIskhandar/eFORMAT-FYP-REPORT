@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { makeStyles, tokens, Button, Input, Text, Field } from "@fluentui/react-components";
-import { StepBody, Hint, Actions, Status } from "../ui/StepUI";
+import { StepBody, Actions, Status, GuideSteps } from "../ui/StepUI";
 
 /* global Word */
 
@@ -36,7 +36,7 @@ const useStyles = makeStyles({
     display: "block",
     textAlign: "justify",
     fontSize: "12px",
-    lineHeight: "1.2",
+    lineHeight: "1.5", // 1.5 spacing, like the page
     color: tokens.colorNeutralForeground2,
   },
 });
@@ -45,9 +45,10 @@ const useStyles = makeStyles({
 const MM_TO_PT = 2.834645669;
 const HEADING_TOP_SPACING_MM = 0;
 
-// Standard sample academic abstract content (~220 words)
+// Standard sample academic abstract content (~220 words). The Abstract is
+// ONE paragraph, 1.5 line spacing.
 const SAMPLE_ABSTRACT_CONTENT =
-  "This study investigates the structural and functional properties of advanced nanomaterials optimized for modern engineering applications. \n Over the past decade, material science has transitioned towards utilizing automated design frameworks to synthesize polymers with superior thermal stability. \n In this research, a comprehensive methodology combining empirical data collections and algorithmic modeling was deployed. \n The primary objectives focused on expanding current limitations surrounding baseline operational stress and structural fatigue under fluctuating environments. \n Initial testing matrices revealed an unprecedented 14% increment in overall tensile resilience when subjected to targeted localized pressure zones. Furthermore, cross-examinations of secondary variables verified that alignment variations do not disrupt structural integrity. These discoveries provide critical insights into improving scalable architectures for high-capacity manufacturing cycles. Ultimately, this framework establishes an innovative benchmark for structural optimization, enabling future architectural systems to seamlessly integrate robust parameters without inflating development overheads. This work bridges the gap between purely theoretical simulation frameworks and material constraints observed in modern industry settings.";
+  "This study investigates the structural and functional properties of advanced nanomaterials optimized for modern engineering applications. Over the past decade, material science has transitioned towards utilizing automated design frameworks to synthesize polymers with superior thermal stability. In this research, a comprehensive methodology combining empirical data collections and algorithmic modeling was deployed. The primary objectives focused on expanding current limitations surrounding baseline operational stress and structural fatigue under fluctuating environments. Initial testing matrices revealed an unprecedented 14% increment in overall tensile resilience when subjected to targeted localized pressure zones. Furthermore, cross-examinations of secondary variables verified that alignment variations do not disrupt structural integrity. These discoveries provide critical insights into improving scalable architectures for high-capacity manufacturing cycles. Ultimately, this framework establishes an innovative benchmark for structural optimization, enabling future architectural systems to seamlessly integrate robust parameters without inflating development overheads. This work bridges the gap between purely theoretical simulation frameworks and material constraints observed in modern industry settings.";
 
 export default function Abstract() {
   const styles = useStyles();
@@ -132,8 +133,7 @@ export default function Abstract() {
     title.lineSpacing = 12;
     title.getRange().insertBookmark("bmAbstractTitle");
 
-    // 3. Content - same style as the Acknowledgements content, but single
-    //    spaced (lineSpacing 12) because the Abstract is single-spaced.
+    // 3. Content - one paragraph, Arial 12, justified, 1.5 spacing.
     const content = context.document.body.insertParagraph(
       SAMPLE_ABSTRACT_CONTENT,
       Word.InsertLocation.end
@@ -145,7 +145,8 @@ export default function Abstract() {
     content.alignment = "Justified";
     content.spaceBefore = 0;
     content.spaceAfter = 0;
-    content.lineSpacing = 12;
+    content.lineSpacing = 18; // 1.5 lines for Arial 12pt
+    content.firstLineIndent = 0;
     content.getRange().insertBookmark("bmAbstractContent");
 
     await context.sync();
@@ -180,10 +181,25 @@ export default function Abstract() {
       paragraph.spaceAfter = 18;
       paragraph.lineSpacing = 12;
     } else {
-      // The content can be several paragraphs (each \n starts a new one).
-      const paragraphs = range.paragraphs;
-      paragraphs.load("items");
+      // The Abstract must be ONE paragraph. If it was split into several
+      // (older versions, or Enter pressed), join them back into one,
+      // keeping the student's words.
+      let paragraphs = range.paragraphs;
+      paragraphs.load("items/text");
       await context.sync();
+      const filled = paragraphs.items.filter((p) => p.text.trim());
+      if (filled.length > 1) {
+        const joined = filled.map((p) => p.text.trim()).join(" ");
+        const whole = paragraphs.items[0].getRange("Whole").expandTo(
+          paragraphs.items[paragraphs.items.length - 1].getRange("Content")
+        );
+        const merged = whole.insertText(joined, Word.InsertLocation.replace);
+        merged.insertBookmark(bookmark);
+        await context.sync();
+        paragraphs = merged.paragraphs;
+        paragraphs.load("items");
+        await context.sync();
+      }
       paragraphs.items.forEach((p) => {
         p.font.name = "Arial";
         p.font.size = 12;
@@ -192,7 +208,9 @@ export default function Abstract() {
         p.alignment = "Justified";
         p.spaceBefore = 0;
         p.spaceAfter = 0;
-        p.lineSpacing = 12;
+        p.lineSpacing = 18; // 1.5 lines
+        p.leftIndent = 0;
+        p.firstLineIndent = 0;
       });
     }
     await context.sync();
@@ -233,10 +251,14 @@ export default function Abstract() {
 
   return (
     <StepBody>
-      <Hint>
-        Adds the Abstract page after Acknowledgements: heading, your thesis title, then the
-        abstract text single-spaced. Your own abstract text is kept when you click again.
-      </Hint>
+      <GuideSteps
+        steps={[
+          <>Type your <b>Thesis Title</b> in the box.</>,
+          <>Click <b>Set Format</b>. The Abstract page is added with sample text.</>,
+          <>In Word, replace the sample text with your own abstract - keep it as ONE paragraph.</>,
+          <>Click <b>Set Format</b> again when you finish. Your text is kept and set to 1.5 spacing.</>,
+        ]}
+      />
 
       <Field label="Thesis Title" required>
         <Input

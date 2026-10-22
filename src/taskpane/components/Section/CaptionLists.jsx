@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { Button } from "@fluentui/react-components";
 import { ImageMultiple20Regular, Table20Regular } from "@fluentui/react-icons";
-import { StepBody, Hint, Actions, Status } from "../ui/StepUI";
+import { StepBody, Actions, Status, GuideSteps } from "../ui/StepUI";
 import {
   updateCaptionList,
   refreshCaptionListPageNumbers,
@@ -76,11 +76,15 @@ export default function CaptionLists() {
 
   return (
     <StepBody>
-      <Hint>
-        Captions are numbered by chapter: the first figure in Chapter 3 is Figure 3.1, the next
-        Figure 3.2 (tables count separately). Update renumbers every caption and rebuilds the list.
-        Page numbers refresh by themselves a moment later.
-      </Hint>
+      <GuideSteps
+        steps={[
+          <>Add your captions first (step 8).</>,
+          <>Click <b>Update List of Figures</b>. The list is created (or refreshed) before Chapter 1.</>,
+          <>Click <b>Update List of Tables</b>.</>,
+          <>Added, moved or deleted a caption? Click the Update buttons again.</>,
+        ]}
+        note="Page numbers refresh by themselves a moment after each update."
+      />
 
       <Actions stretch>
         <Button

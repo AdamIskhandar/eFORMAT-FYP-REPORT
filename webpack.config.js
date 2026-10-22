@@ -91,6 +91,14 @@ module.exports = async (env, options) => {
     ],
     devServer: {
       hot: true,
+      // Don't show the full-screen error overlay for the harmless
+      // "ResizeObserver loop" browser warning (Fluent UI in a narrow pane).
+      // Real errors still show.
+      client: {
+        overlay: {
+          runtimeErrors: (error) => !/ResizeObserver loop/.test(error?.message || ""),
+        },
+      },
       headers: {
         "Access-Control-Allow-Origin": "*",
       },

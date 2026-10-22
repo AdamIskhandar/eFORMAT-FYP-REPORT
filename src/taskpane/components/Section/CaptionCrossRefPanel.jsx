@@ -19,7 +19,7 @@ import {
   updateReferencesAfterRenumber,
 } from "../Section/utils/word-crossref-utils";
 
-import { StepBody, Hint, SubHeading, Group, Actions, Status } from "../ui/StepUI";
+import { StepBody, SubHeading, Group, Actions, Status, GuideSteps } from "../ui/StepUI";
 
 const useStyles = makeStyles({
   issuesList: {
@@ -136,13 +136,18 @@ export default function CaptionCrossRefPanel() {
 
   return (
     <StepBody>
+      <GuideSteps
+        steps={[
+          <>In Word, click on the line of your picture, or inside your table.</>,
+          <>Here, choose <b>Figure</b> or <b>Table</b> and type the caption text.</>,
+          <>Click <b>Insert Figure Caption</b> (or <b>Insert Table Caption</b>). It is numbered for its chapter (e.g. Figure 3.1).</>,
+          <>Moved or deleted a picture or table? Click <b>Renumber</b>. Click <b>Check</b> to see if any number is wrong.</>,
+          <>To find a caption, use <b>Find a caption</b>: load the captions, pick one, click <b>Go To Caption</b>.</>,
+        ]}
+        note="A figure caption goes below the picture; a table caption goes above the table."
+      />
       <Group>
         <SubHeading>Insert a caption</SubHeading>
-        <Hint>
-          Put the cursor on the picture&apos;s line (or inside the table), then insert. Numbers follow
-          the chapter: the first figure in Chapter 3 is Figure 3.1. A table caption goes above the
-          table, a figure caption below it.
-        </Hint>
         <Field label="Type">
             <Dropdown
               value={typeLabel(captionType)}
@@ -187,7 +192,6 @@ export default function CaptionCrossRefPanel() {
 
       <Group>
         <SubHeading>Find a caption</SubHeading>
-        <Hint>Jump straight to any figure or table caption in your report. Load the captions, pick one, then click Go To Caption.</Hint>
         <Field label="Type">
             <Dropdown
               value={typeLabel(refType)}

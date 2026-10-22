@@ -36,6 +36,7 @@ const isCaption = (p, text) => {
   const m = text.match(CAPTION_PATTERN);
   return !!m && (m[2] !== "" || p.alignment === "Centered");
 };
+const PLACEHOLDER_GREY = "#8A8A8A"; // colour of the old hint lines
 const CHAPTER_PATTERN = /^CHAPTER\s+(\d+|[IVXLCDM]+)\b/i;
 
 const isHeading = (p) =>
@@ -65,7 +66,7 @@ export async function formatSelection(context, kind) {
 /** Formats the whole report, Chapter 1 to the end. */
 export async function formatWholeReport(context) {
   const paragraphs = context.document.body.paragraphs;
-  paragraphs.load("items/text,items/style,items/styleBuiltIn,items/tableNestingLevel,items/alignment");
+  paragraphs.load("items/text,items/style,items/styleBuiltIn,items/tableNestingLevel,items/alignment,items/font/color");
   await context.sync();
 
   // Start at the first chapter heading, so the cover, Title Page,
@@ -74,7 +75,7 @@ export async function formatWholeReport(context) {
     (p) => p.tableNestingLevel === 0 && isHeading(p) && CHAPTER_PATTERN.test(p.text.trim())
   );
   if (start < 0) {
-    throw new Error('No chapter heading found. Generate the Table of Contents first (it adds "CHAPTER I" ...).');
+    throw new Error('No chapter heading found. Generate the Table of Contents first (it adds "CHAPTER 1" ...).');
   }
 
   const counts = { content: 0, small: 0 };
@@ -86,6 +87,12 @@ export async function formatWholeReport(context) {
       counts.small++;
     } else if (text) {
       applyKind(p, "content");
+      // Text typed over an old grey "Write your content here." hint keeps
+      // the hint's grey italic look - make it normal black text.
+      if ((p.font.color || "").toUpperCase() === PLACEHOLDER_GREY) {
+        p.font.color = "#000000";
+        p.font.italic = false;
+      }
       counts.content++;
     }
   });

@@ -11,8 +11,7 @@ import {
   Text,
 } from "@fluentui/react-components";
 import Header from "./Header";
-import HardCoverColour from "./HardCoverColour";
-import SideCover from "./Section/SideCover";
+import WhatsNew from "./WhatsNew";
 import FrontCoverUtils from "./FrontCoverUtils";
 import TitlePage from "./TitlePage";
 import HeaderFooter from "./Section/HeaderFooter";
@@ -25,7 +24,7 @@ import CaptionCrossRefPanel from "./Section/CaptionCrossRefPanel";
 import Content from "./Section/Content";
 
 // Not shown in the panel right now (kept for later):
-// FrontCover, ListOfTables, CitationPanel, References,
+// HardCoverColour, SideCover (Printing & Binding guide), FrontCover, ListOfTables, CitationPanel, References,
 // Appendices, FormattingEngine, DocumentModules, ReferenceModules,
 // ConfigSettings, DashboardPanel, MadeBy
 
@@ -154,28 +153,12 @@ const GROUPS = [
   },
 ];
 
-// Guides that don't change the document - no step number.
-const INFO = [
-  {
-    id: "binding",
-    title: "Printing & Binding",
-    subtitle: "Hard cover colour and side cover",
-    Component: function Binding() {
-      return (
-        <>
-          <HardCoverColour />
-          <SideCover />
-        </>
-      );
-    },
-  },
-];
-
-const ALL_IDS = [...GROUPS.flatMap((g) => g.steps.map((s) => s.id)), ...INFO.map((i) => i.id)];
+const ALL_IDS = GROUPS.flatMap((g) => g.steps.map((s) => s.id));
 
 export default function App() {
   const styles = useStyles();
   const [openItems, setOpenItems] = React.useState(["front-cover"]);
+  const [showNews, setShowNews] = React.useState(false);
 
   const allOpen = openItems.length === ALL_IDS.length;
   let number = 0;
@@ -214,14 +197,25 @@ export default function App() {
 
       <div className={styles.intro}>
         <Text className={styles.introText}>Work through the steps in order, starting from 1.</Text>
-        <Button
-          size="small"
-          appearance="subtle"
-          style={{ whiteSpace: "nowrap", flexShrink: 0 }}
-          onClick={() => setOpenItems(allOpen ? [] : ALL_IDS)}>
-          {allOpen ? "Collapse all" : "Expand all"}
-        </Button>
+        <div style={{ display: "flex", flexShrink: 0 }}>
+          <Button
+            size="small"
+            appearance="subtle"
+            style={{ whiteSpace: "nowrap" }}
+            onClick={() => setShowNews(true)}>
+            What&apos;s new
+          </Button>
+          <Button
+            size="small"
+            appearance="subtle"
+            style={{ whiteSpace: "nowrap" }}
+            onClick={() => setOpenItems(allOpen ? [] : ALL_IDS)}>
+            {allOpen ? "Collapse all" : "Expand all"}
+          </Button>
+        </div>
       </div>
+
+      <WhatsNew forceOpen={showNews} onClose={() => setShowNews(false)} />
 
       <Accordion
         multiple
@@ -235,8 +229,6 @@ export default function App() {
             <div className={styles.list}>{group.steps.map((s) => renderItem(s, true))}</div>
           </div>
         ))}
-        <Text className={styles.groupLabel}>Guides</Text>
-        <div className={styles.list}>{INFO.map((s) => renderItem(s, false))}</div>
       </Accordion>
 
       <Text className={styles.footer}>eFormat FYP Report · Universiti Poly-Tech Malaysia</Text>

@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { useId, Dropdown, Option, Button, Field } from "@fluentui/react-components";
 import { TextGrammarWand20Regular, DocumentText20Regular } from "@fluentui/react-icons";
-import { StepBody, Hint, SubHeading, Group, Actions, Status, GuideTable } from "../ui/StepUI";
+import { StepBody, SubHeading, Group, Actions, Status, GuideTable, GuideSteps } from "../ui/StepUI";
 import { CONTENT_FORMAT, formatSelection, formatWholeReport } from "./utils/content-format-utils";
 
 /* global Word */
@@ -63,15 +63,18 @@ export default function Content() {
 
   return (
     <StepBody>
+      <GuideSteps
+        steps={[
+          <>Write your report first (from Chapter 1 to the end).</>,
+          <>Click <b>Format Whole Report</b>. Text becomes Arial 11, 1.5 spacing, justify; text in tables and Figure/Table captions becomes Arial 10.</>,
+          <>To fix only one part: in Word, click in a paragraph (or select several), choose what it is in <b>The selected text is</b>, then click <b>Set Format</b>.</>,
+        ]}
+        note="Headings and the pages before Chapter 1 are not changed. Bold or italic words you set yourself are kept."
+      />
       <GuideTable title="UPTM content format" rows={GUIDE} />
 
       <Group>
         <SubHeading>Format the whole report</SubHeading>
-        <Hint>
-          From Chapter 1 to the end: content becomes Arial 11, 1.5 spacing, justify; text in
-          tables and Figure/Table captions become Arial 10. Headings and the pages before Chapter 1
-          are not changed. Bold or italic words you set yourself are kept.
-        </Hint>
         <Actions stretch>
           <Button appearance="primary" icon={<DocumentText20Regular />} onClick={handleFormatAll}>
             Format Whole Report
@@ -82,10 +85,6 @@ export default function Content() {
 
       <Group>
         <SubHeading>Format selected text</SubHeading>
-        <Hint>
-          Put the cursor in a paragraph (or select several), choose what it is, then click Set
-          Format. Content also gets 1.5 spacing and justify.
-        </Hint>
         <Field label="The selected text is">
           <Dropdown
             id={dropdownId}

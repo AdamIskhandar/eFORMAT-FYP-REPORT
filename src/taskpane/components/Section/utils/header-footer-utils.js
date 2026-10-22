@@ -16,8 +16,8 @@
  *
  * Layout: one line written as Word XML (OOXML), not a table, so there are no
  * dotted table gridlines. The line is widened past the body margins with
- * negative indents, so it runs from about 1.5 cm off the left page edge to
- * about 1.3 cm off the right page edge, like the UPTM sample. The right-hand
+ * negative indents, so it runs from 2 cm off the left page edge to 2 cm off
+ * the right page edge - centred on the page. The right-hand
  * text uses an absolute right-aligned tab (w:ptab), pinned to that right edge.
  *
  * Both functions clear and rebuild, so the buttons can be clicked again to
@@ -35,10 +35,12 @@ const cmToPt = (cm) => cm * 28.346;
 const LEFT_MARGIN_PT = inchToPt(1.52);
 const RIGHT_MARGIN_PT = inchToPt(1.2);
 
-// Where the header/footer text sits, measured from the page edges.
-// Change these two numbers to move it.
-const FROM_LEFT_EDGE_PT = cmToPt(2.1);
-const FROM_RIGHT_EDGE_PT = cmToPt(1.3);
+// Where the header/footer text sits, measured from the page edges. The
+// same distance on both sides, so the line is centred on the page.
+// Change this one number to move both sides in or out.
+const FROM_PAGE_EDGE_CM = 2.0;
+const FROM_LEFT_EDGE_PT = cmToPt(FROM_PAGE_EDGE_CM);
+const FROM_RIGHT_EDGE_PT = cmToPt(FROM_PAGE_EDGE_CM);
 
 // Negative indents pull the line out past the body margins. Word measures
 // indents in twentieths of a point (twips).
@@ -47,6 +49,30 @@ const LEFT_INDENT_PT = -(LEFT_MARGIN_PT - FROM_LEFT_EDGE_PT);
 const RIGHT_INDENT_PT = -(RIGHT_MARGIN_PT - FROM_RIGHT_EDGE_PT);
 const LEFT_INDENT_TWIPS = toTwips(LEFT_INDENT_PT);
 const RIGHT_INDENT_TWIPS = toTwips(RIGHT_INDENT_PT);
+
+// Height of the one 10 pt line, so it can be centred in the margin.
+const LINE_HEIGHT_PT = 11.5;
+
+/**
+ * Vertical centring: puts the header line in the middle of the TOP margin
+ * (between the page edge and where the text starts), and the footer line
+ * in the middle of the BOTTOM margin. Applied to every report section
+ * (section 3 onward), using each section's own margin.
+ */
+async function centreInMargins(context, sections, which) {
+  const report = sections.items.slice(REPORT_SECTION_INDEX);
+  report.forEach((section) => section.pageSetup.load("topMargin,bottomMargin"));
+  await context.sync();
+  report.forEach((section) => {
+    const setup = section.pageSetup;
+    if (which === "header") {
+      setup.headerDistance = Math.max(0, (setup.topMargin - LINE_HEIGHT_PT) / 2);
+    } else {
+      setup.footerDistance = Math.max(0, (setup.bottomMargin - LINE_HEIGHT_PT) / 2);
+    }
+  });
+  await context.sync();
+}
 
 const FONT_NAME = "Arial";
 const FONT_SIZE_HALF_POINTS = 20; // 10 pt
@@ -157,6 +183,7 @@ export async function setReportHeader(context, authorName, shortTitle) {
 
   const header = sections.items[REPORT_SECTION_INDEX].getHeader("Primary");
   await writeLine(context, header, lineOoxml(textRun(authorName), textRun(shortTitle)));
+  await centreInMargins(context, sections, "header");
 }
 
 export async function setReportFooter(context, subjectCode) {
@@ -167,4 +194,5 @@ export async function setReportFooter(context, subjectCode) {
   const footer = sections.items[REPORT_SECTION_INDEX].getFooter("Primary");
   const right = textRun("Page ") + fieldRun("PAGE") + textRun(" of ") + fieldRun("NUMPAGES");
   await writeLine(context, footer, lineOoxml(textRun(subjectCode), right));
+  await centreInMargins(context, sections, "footer");
 }

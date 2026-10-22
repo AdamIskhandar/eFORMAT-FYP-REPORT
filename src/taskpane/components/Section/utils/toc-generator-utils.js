@@ -7,7 +7,7 @@
  *   DECLARATION                                                   4
  *   ...front-matter pages that exist...
  *
- *   CHAPTER I      INTRODUCTION                                   9
+ *   CHAPTER 1      INTRODUCTION                                   9
  *   1.1            Introduction                                   9
  *                  1.3.1  UPTM use a manual way ...              10
  *
@@ -23,8 +23,16 @@
  * updateTableOfContents   - rebuilds the CONTENTS from the headings that
  *                           exist now (added / renamed / deleted headings).
  * listParentHeadings      - headings a new subheading can go under.
+ * addChapter              - adds the next chapter (CHAPTER 6 / TITLE) with a
+ *                           "6.1 Introduction" section, before References.
  * addSubheading           - adds the next-numbered child heading under a
- *                           parent (under 3.3 -> 3.3.5), then updates.
+ *                           parent (under 3.3 -> 3.3.5; under 2.3.4 -> "b.").
+ *                           Does NOT update the CONTENTS (Update does).
+ *
+ * NUMBERING RULE: numbers go to 3 digits at most (2.3.4). A heading under a
+ * 3-digit heading is lettered instead - a., b., c. (never 2.3.4.1) - and
+ * lettered headings are NOT listed in the CONTENTS. Only chapters and
+ * headings up to 3 digits appear there.
  */
 
 /* global Word */
@@ -35,6 +43,12 @@ const TOC_END_BOOKMARK = "bmTocEnd"; // empty line that ends the rows
 const HEADING_BOOKMARK_PREFIX = "bmReportHeading_";
 const MAX_HEADING_LEVEL = 4;
 const NEW_SUBHEADING_PLACEHOLDER = "Write your content here.";
+// Deepest heading level listed in the CONTENTS (3 = 2.3.4). Level 4
+// headings are lettered (a., b., ...) and left out of the CONTENTS.
+const CONTENTS_MAX_LEVEL = 3;
+const LETTER_LEVEL = 4;
+// What follows the letter: "a." Change to ")" for "a)".
+const LETTER_SUFFIX = ".";
 
 // Front-matter pages listed at the top of CONTENTS, in this order. Only the
 // ones that exist in the document (bookmark found) are listed.
@@ -50,12 +64,12 @@ const FRONT_MATTER = [
 // ---------- formatting of the real headings in the document ----------
 
 // Body format (UPTM sample): Arial 12, 1.5 line spacing. One blank 1.5 line
-// = 18pt. Each chapter starts on a new page, "CHAPTER I" 50 mm from the top.
+// = 18pt. Each chapter starts on a new page, "CHAPTER 1" 50 mm from the top.
 const LINE_PT = 18; // one 1.5-spaced line of 12pt text
 const SUB_TITLE_INDENT_PT = 54; // 0.75": where "BACKGROUND" starts after "1.1"
 
 const HEADING_FORMAT = {
-  // CHAPTER I / (2 lines) / INTRODUCTION / (2 lines)
+  // CHAPTER 1 / (2 lines) / INTRODUCTION / (2 lines)
   // (gap above comes from CHAPTER_TOP_LINES - Word ignores spaceBefore at a page top)
   1: { builtIn: "heading1", allCaps: true, alignment: "Centered", leftIndent: 0, firstLineIndent: 0, spaceBefore: 0, spaceAfter: LINE_PT },
   // 1.1   BACKGROUND
@@ -84,16 +98,28 @@ function formatHeading(paragraph, level) {
   paragraph.spaceAfter = f.spaceAfter;
 }
 
+// Body content format (same as step 10 "Content"): Arial 11, justified,
+// 1.5 spacing, black, from the margin.
+const CONTENT_SIZE = 11;
+
+function applyContentFormat(target) {
+  target.font.name = "Arial";
+  target.font.size = CONTENT_SIZE;
+  target.font.bold = false;
+  target.font.italic = false;
+  target.font.allCaps = false;
+  target.font.color = "#000000";
+}
+
+/**
+ * The "Write your content here." line, as a plain paragraph (no box), set
+ * in the content format: Arial 11, justified, 1.5 spacing, black. So when
+ * the student selects it and types, their text is already in the right
+ * format - and so is every paragraph they add with Enter.
+ */
 function formatPlaceholder(paragraph) {
-  // Body text: plain, justified, 1.5 spacing, from the margin. Grey italic
-  // only because it's a hint the student replaces.
   paragraph.styleBuiltIn = Word.BuiltInStyleName.normal;
-  paragraph.font.name = "Arial";
-  paragraph.font.size = 12;
-  paragraph.font.bold = false;
-  paragraph.font.italic = true;
-  paragraph.font.allCaps = false;
-  paragraph.font.color = "#8a8a8a";
+  applyContentFormat(paragraph);
   paragraph.alignment = "Justified";
   paragraph.leftIndent = 0;
   paragraph.firstLineIndent = 0;
@@ -144,16 +170,17 @@ export function headingPrefix(text) {
 }
 
 // Text of a heading in the report format:
-//   level 1 "1 INTRODUCTION"  -> "CHAPTER I" <2 line breaks> "INTRODUCTION"
+//   level 1 "1 INTRODUCTION"  -> "CHAPTER 1" <2 line breaks> "INTRODUCTION"
+//   (chapters are numbered 1, 2, 3 - an older "CHAPTER III" becomes "CHAPTER 3")
 //   level 2+ "1.1 Background" -> "1.1" <tab> "Background"
 // Headings already in that form, and unnumbered ones (Appendix, References),
 // are returned unchanged.
 const CHAPTER_GAP = "\v\v\v"; // line break + 2 blank lines
 
-// Gap ABOVE "CHAPTER I", in blank 1.5 lines (18pt each), counted from the top
+// Gap ABOVE "CHAPTER 1", in blank 1.5 lines (18pt each), counted from the top
 // margin. Word drops "space before" at the top of a new page, so the gap is
 // made of blank lines inside the heading instead - Word always keeps those.
-// 4 lines = 72pt, so CHAPTER I sits about 50 mm from the page top.
+// 4 lines = 72pt, so CHAPTER 1 sits about 50 mm from the page top.
 // Want more gap? Make this bigger. Less? Make it smaller.
 const CHAPTER_TOP_LINES = 4;
 const CHAPTER_TOP = "\v".repeat(CHAPTER_TOP_LINES);
@@ -161,19 +188,24 @@ const CHAPTER_TOP = "\v".repeat(CHAPTER_TOP_LINES);
 export function reportHeadingText(text, level) {
   const t = text.trim();
   if (level === 1) {
-    // "1.5 spacing x 2" between CHAPTER I and the title = 2 blank lines,
+    // "1.5 spacing x 2" between CHAPTER 1 and the title = 2 blank lines,
     // i.e. 3 line breaks. Headings already converted are re-spaced too.
     // CHAPTER_TOP is the gap above, as blank lines (see CHAPTER_TOP_LINES).
     const done = t.match(/^(CHAPTER\s+[IVXLCDM\d]+)\s*\v[\s\v]*(.+)$/is);
-    if (done) return `${CHAPTER_TOP}${done[1]}${CHAPTER_GAP}${done[2].trim()}`;
-    if (/^CHAPTER\b/i.test(t)) return `${CHAPTER_TOP}${t}`;
+    if (done) return `${CHAPTER_TOP}${chapterNumberLabel(done[1])}${CHAPTER_GAP}${done[2].trim()}`;
+    if (/^CHAPTER\b/i.test(t)) return `${CHAPTER_TOP}${chapterNumberLabel(t)}`;
     const m = t.match(/^(\d+)\.?\s+(.+)$/s);
     return m
-      ? `${CHAPTER_TOP}CHAPTER ${toRoman(parseInt(m[1], 10))}${CHAPTER_GAP}${m[2].trim()}`
+      ? `${CHAPTER_TOP}CHAPTER ${parseInt(m[1], 10)}${CHAPTER_GAP}${m[2].trim()}`
       : `${CHAPTER_TOP}${t}`; // REFERENCES, APPENDIX ... get the same gap
   }
   const m = t.match(/^(\d+(?:\.\d+)+)\.?[ \t]+(.+)$/s);
   return m ? `${m[1]}\t${m[2].trim()}` : t;
+}
+
+// "CHAPTER III ..." -> "CHAPTER 3 ..." (chapters use numbers, not Roman).
+function chapterNumberLabel(text) {
+  return text.replace(/^CHAPTER\s+([IVXLCDM]+)\b/i, (_, roman) => `CHAPTER ${romanToInt(roman)}`);
 }
 
 function headingTitle(text) {
@@ -196,6 +228,31 @@ function toRoman(n) {
   return out || String(n);
 }
 
+// 1 -> "a", 2 -> "b", ... 26 -> "z", 27 -> "aa"
+export function toLetter(n) {
+  let out = "";
+  let num = n;
+  while (num > 0) {
+    num -= 1;
+    out = String.fromCharCode(97 + (num % 26)) + out;
+    num = Math.floor(num / 26);
+  }
+  return out;
+}
+
+// Title of a level-4 heading without its old label: "2.3.4.1 Title",
+// "a.<tab>Title", "b)<tab>Title" -> "Title". (A letter label only counts
+// when a tab follows it, so a title like "Dr. Smith" is never cut.)
+function letteredTitle(text) {
+  return text
+    .trim()
+    .replace(/^\d+(?:\.\d+)+\.?\s+/, "")
+    .replace(/^[a-z]{1,2}[.)]\t+/i, "")
+    .trim();
+}
+
+const letterLabel = (n) => `${toLetter(n)}${LETTER_SUFFIX}`;
+
 const normText = (t) => String(t).replace(/\s+/g, " ").trim().toUpperCase();
 
 /**
@@ -210,6 +267,20 @@ export function planNewSubheading(headings, parentPrefix) {
   const parent = headings[parentIndex];
   if (parent.level >= MAX_HEADING_LEVEL) {
     throw new Error(`"${parentPrefix}" is already the deepest heading level, so it can't have sub-headings.`);
+  }
+
+  // Under a 3-digit heading (2.3.4) the next one is a letter, not 2.3.4.1.
+  if (parent.level + 1 === LETTER_LEVEL) {
+    let count = 0;
+    let nextIndex = -1;
+    for (let j = parentIndex + 1; j < headings.length; j++) {
+      if (headings[j].level <= parent.level) {
+        nextIndex = j;
+        break;
+      }
+      if (headings[j].level === LETTER_LEVEL) count++;
+    }
+    return { number: letterLabel(count + 1), level: LETTER_LEVEL, parentIndex, nextIndex };
   }
 
   const childPattern = new RegExp(`^${parentPrefix.replace(/\./g, "\\.")}\\.(\\d+)$`);
@@ -247,13 +318,15 @@ async function scanHeadings(context) {
   await context.sync();
 
   const headings = [];
-  paragraphs.items.forEach((p) => {
+  paragraphs.items.forEach((p, index) => {
     if (p.tableNestingLevel > 0) return;
     const level = headingLevelOf(p);
     const text = p.text.trim();
     if (!level || !text) return;
-    headings.push({ paragraph: p, level, text, rawText: p.text, prefix: headingPrefix(text) });
+    headings.push({ paragraph: p, level, text, rawText: p.text, prefix: headingPrefix(text), index });
   });
+  // Every paragraph of the document, for finding where a section ends.
+  headings.all = paragraphs.items;
   return headings;
 }
 
@@ -265,6 +338,29 @@ async function existingFrontMatter(context) {
   });
   await context.sync();
   return FRONT_MATTER.filter((_, i) => !ranges[i].isNullObject);
+}
+
+/**
+ * Moves each front-matter bookmark onto the heading WORDS only (e.g. "LIST
+ * OF FIGURES"). If the bookmark also covered a page break in front of the
+ * heading, or another list's heading, its page number came out as the page
+ * BEFORE (the List of Figures showed page 11 while it was on page 12).
+ */
+async function pinFrontMatterBookmarks(context, front) {
+  // Search the WHOLE bookmark, not just its first paragraph: when a list is
+  // inserted in front of another, Word stretches the first list's bookmark
+  // over the new one (seen: the List of Figures bookmark began at LIST OF
+  // TABLES, one page earlier).
+  const found = front.map((f) => {
+    const hits = context.document.getBookmarkRangeOrNullObject(f.bookmark).search(f.label, { matchCase: false });
+    hits.load("items");
+    return hits;
+  });
+  await context.sync();
+  front.forEach((f, i) => {
+    if (found[i].items.length > 0) found[i].items[0].insertBookmark(f.bookmark);
+  });
+  await context.sync();
 }
 
 // ---------- public API ----------
@@ -338,7 +434,7 @@ export async function generateTableOfContents(context, structure) {
 const toTwips = (pt) => Math.round(pt * 20);
 const inchToPt = (inch) => inch * 72;
 
-const TITLE_COL_PT = inchToPt(1.4); // where titles start (after "CHAPTER III")
+const TITLE_COL_PT = inchToPt(1.4); // where titles start (after "CHAPTER 10")
 const LEVEL4_EXTRA_PT = inchToPt(0.4); // extra indent for 3.5.1.1-style lines
 const PAGE_GAP_PT = inchToPt(0.5); // keep wrapped titles clear of the page numbers
 // Right-aligned tab stop for the page numbers, at the right margin. Tab
@@ -412,7 +508,7 @@ function entryRowXml(e) {
       // Appendix / References: no number column.
       return rowXml(textRun(e.title.toUpperCase(), f) + page(f), f.spaceBefore, { ...opts, hanging: false });
     }
-    const label = `CHAPTER ${toRoman(parseInt(e.number, 10))}`;
+    const label = `CHAPTER ${parseInt(e.number, 10)}`;
     return rowXml(textRun(label, f) + tabRun(f) + textRun(e.title.toUpperCase(), f) + page(f), f.spaceBefore, opts);
   }
   if (e.level === 2) {
@@ -498,11 +594,21 @@ export async function updateTableOfContents(context) {
     );
   }
 
-  // 0. Bring every heading into the report format (CHAPTER I / INTRODUCTION,
+  // 0. Bring every heading into the report format (CHAPTER 1 / INTRODUCTION,
   //    "1.1<tab>BACKGROUND", Arial 12 bold, 1.5 spacing). Safe to repeat.
+  //    Level-4 headings are (re)lettered a., b., c. under each 3-digit
+  //    heading, in order - so a deleted or moved one never leaves a gap.
   const before = await scanHeadings(context);
+  let letterCount = 0;
   before.forEach((h) => {
-    const wanted = reportHeadingText(h.text, h.level);
+    let wanted;
+    if (h.level === LETTER_LEVEL) {
+      letterCount += 1;
+      wanted = `${letterLabel(letterCount)}\t${letteredTitle(h.text)}`;
+    } else {
+      letterCount = 0; // a new 1/2/3-level heading restarts the letters
+      wanted = reportHeadingText(h.text, h.level);
+    }
     if (wanted !== h.rawText.replace(/[ \t\r\n]+$/, "")) {
       h.paragraph.getRange("Content").insertText(wanted, Word.InsertLocation.replace);
     }
@@ -510,8 +616,9 @@ export async function updateTableOfContents(context) {
   });
   await context.sync();
 
-  // 1. Bookmark every heading in document order (link + page number target).
-  const headings = await scanHeadings(context);
+  // 1. Bookmark every heading listed in the CONTENTS - chapters and up to
+  //    3 digits (link + page number target). Lettered ones are left out.
+  const headings = (await scanHeadings(context)).filter((h) => h.level <= CONTENTS_MAX_LEVEL);
   headings.forEach((h, i) => {
     h.paragraph.getRange("Content").insertBookmark(`${HEADING_BOOKMARK_PREFIX}${i}`);
   });
@@ -519,6 +626,7 @@ export async function updateTableOfContents(context) {
 
   // 2. The entries: front-matter pages that exist, then every heading.
   const front = await existingFrontMatter(context);
+  await pinFrontMatterBookmarks(context, front);
   const entries = [
     ...front.map((f) => ({ kind: "front", label: f.label, bookmark: f.bookmark })),
     ...headings.map((h, i) => ({
@@ -596,14 +704,22 @@ async function insertLayout(context, entries) {
 export async function listParentHeadings(context) {
   const headings = await scanHeadings(context);
   return headings
-    .filter((h) => h.prefix && h.level < MAX_HEADING_LEVEL)
-    .map((h) => ({ prefix: h.prefix, text: h.text, level: h.level }));
+    .filter((h) => h.prefix && h.level <= CONTENTS_MAX_LEVEL)
+    // Chapter headings hold line breaks (CHAPTER 1 / INTRODUCTION) - show
+    // them as one line: "CHAPTER 1 INTRODUCTION".
+    .map((h) => ({ prefix: h.prefix, text: h.text.replace(/[\v\s]+/g, " ").trim(), level: h.level }));
 }
 
 /**
  * Adds "<parent>.<next> <title>" as the last child of the parent heading,
- * with a placeholder line under it, then updates the Table of Contents.
+ * with a placeholder line under it. The Table of Contents is left for the
+ * student to update (Update Table of Contents) when they're done adding.
  */
+// A line that holds nothing but a page/section break or spaces.
+function isBreakOrEmpty(paragraph) {
+  return paragraph.tableNestingLevel === 0 && paragraph.text.replace(/[\f\s\u000c\u000e]/g, "") === "";
+}
+
 export async function addSubheading(context, parentPrefix, title) {
   const cleanTitle = (title || "").trim();
   if (!cleanTitle) throw new Error("Type a title for the new subheading.");
@@ -612,9 +728,37 @@ export async function addSubheading(context, parentPrefix, title) {
   const plan = planNewSubheading(headings, parentPrefix);
   const text = `${plan.number}\t${cleanTitle}`;
 
+  // Put it straight after the parent's last line of content. NOT just
+  // before the next heading: when the next heading is a new chapter (or
+  // References / Appendix) there is a page break in between, and the new
+  // subheading would land on the next chapter's page. So step back over
+  // the page break and empty lines to the last real line.
   let newHeading;
   if (plan.nextIndex >= 0) {
-    newHeading = headings[plan.nextIndex].paragraph.insertParagraph(text, "Before");
+    const all = headings.all;
+    const parentIndex = headings[plan.parentIndex].index;
+    let k = headings[plan.nextIndex].index - 1;
+    // Step back over page breaks / empty lines. (A content box from an
+    // earlier test version counts as content - stop there, go after it.)
+    let box = null;
+    for (; k > parentIndex; k--) {
+      const parentBox = all[k].parentContentControlOrNullObject;
+      parentBox.load("isNullObject");
+      await context.sync();
+      if (!parentBox.isNullObject) {
+        box = parentBox;
+        break;
+      }
+      if (!isBreakOrEmpty(all[k])) break;
+    }
+    if (!box && k > parentIndex) {
+      const parentBox = all[k].parentContentControlOrNullObject;
+      parentBox.load("isNullObject");
+      await context.sync();
+      if (!parentBox.isNullObject) box = parentBox;
+    }
+    // Inside a content box, go after the whole box (not inside it).
+    newHeading = box ? box.insertParagraph(text, "After") : all[k].insertParagraph(text, "After");
   } else {
     newHeading = context.document.body.insertParagraph(text, "End");
   }
@@ -624,6 +768,112 @@ export async function addSubheading(context, parentPrefix, title) {
   formatPlaceholder(placeholder);
   await context.sync();
 
-  await updateTableOfContents(context);
+  // The Table of Contents is NOT updated here - that takes a while, so the
+  // student adds all their subheadings first, then clicks Update once.
   return { text: `${plan.number} ${cleanTitle}`, level: plan.level };
+}
+
+/**
+ * Adds the next chapter after the last numbered chapter (so before
+ * REFERENCES / APPENDIX), on its own page:
+ *
+ *   CHAPTER 6
+ *   <TITLE>
+ *   6.1   INTRODUCTION
+ *   Write your content here.
+ *
+ * then updates the Table of Contents. Returns { number, title }.
+ */
+export async function addChapter(context, title) {
+  const cleanTitle = (title || "").replace(/\s+/g, " ").trim();
+  if (!cleanTitle) throw new Error("Type a title for the new chapter.");
+
+  const headings = await scanHeadings(context);
+  const chapters = headings.filter((h) => h.level === 1);
+  if (chapters.length === 0) {
+    throw new Error("Generate the Table of Contents first - it creates the chapters.");
+  }
+
+  let lastNumbered = -1;
+  let highest = 0;
+  chapters.forEach((h, i) => {
+    const n = parseInt(h.prefix, 10);
+    if (h.prefix && !Number.isNaN(n)) {
+      lastNumbered = i;
+      highest = Math.max(highest, n);
+    }
+  });
+  const number = highest + 1;
+  // First unnumbered chapter-level heading after the last chapter
+  // (REFERENCES, APPENDIX ...). The new chapter goes just before it.
+  const before = chapters.slice(lastNumbered + 1).find((h) => !h.prefix) || null;
+
+  const headingText = reportHeadingText(`${number} ${cleanTitle.toUpperCase()}`, 1);
+  const introText = reportHeadingText(`${number}.1 Introduction`, 2);
+
+  let chapterPara;
+  if (before) {
+    // REFERENCES already starts on a new page, so the new chapter takes
+    // that page and a page break after it pushes REFERENCES to the next.
+    chapterPara = before.paragraph.insertParagraph(headingText, "Before");
+  } else {
+    context.document.body.insertBreak(Word.BreakType.page, Word.InsertLocation.end);
+    chapterPara = context.document.body.insertParagraph(headingText, "End");
+  }
+  formatHeading(chapterPara, 1);
+
+  const introPara = chapterPara.insertParagraph(introText, "After");
+  formatHeading(introPara, 2);
+
+  const placeholder = introPara.insertParagraph(NEW_SUBHEADING_PLACEHOLDER, "After");
+  formatPlaceholder(placeholder);
+  if (before) {
+    placeholder.insertBreak(Word.BreakType.page, "After");
+  }
+  await context.sync();
+
+  await updateTableOfContents(context);
+  return { number, title: cleanTitle.toUpperCase() };
+}
+
+/**
+ * Refreshes EVERY page number in the document that points at a heading or
+ * caption (Table of Contents, List of Figures, List of Tables) - like
+ * pressing F9 on all of them - and returns the numbers shown afterwards,
+ * so the caller can repeat until they stop changing.
+ */
+export async function refreshAllPageNumbers(context) {
+  const fields = context.document.body.fields;
+  fields.load("items/code");
+  await context.sync();
+  const pageRefs = fields.items.filter((f) => /^\s*PAGEREF\b/i.test(f.code || ""));
+  pageRefs.forEach((f) => f.updateResult());
+  await context.sync();
+  pageRefs.forEach((f) => f.result.load("text"));
+  await context.sync();
+  const pages = pageRefs.map((f) => f.result.text.trim());
+
+  // Sanity check: every chapter / heading comes AFTER the Contents page, so
+  // its page number must be bigger. If Word hasn't finished laying out the
+  // pages yet, they all show the same early number - then this is false.
+  const target = (f) => ((f.code || "").match(/PAGEREF\s+(\S+)/i) || [])[1] || "";
+  const contentsIndex = pageRefs.findIndex((f) => target(f) === TOC_HEAD_BOOKMARK);
+  //   Also: headings come in page order, and a report's headings can't all
+  //   be on ONE page - if they are (e.g. every chapter shows 8), Word hadn't
+  //   laid out the pages yet when the numbers were read.
+  let ready = true;
+  const headingPages = pageRefs
+    .map((f, i) => (target(f).startsWith(HEADING_BOOKMARK_PREFIX) ? parseInt(pages[i], 10) : null))
+    .filter((n) => n !== null);
+  if (contentsIndex >= 0) {
+    const contentsPage = parseInt(pages[contentsIndex], 10);
+    if (headingPages.some((n) => !(n > contentsPage))) ready = false;
+  }
+  for (let i = 1; i < headingPages.length; i++) {
+    if (headingPages[i] < headingPages[i - 1]) ready = false;
+  }
+  if (headingPages.length > 1 && headingPages[headingPages.length - 1] === headingPages[0]) {
+    ready = false;
+  }
+  return { pages, ready };
 }

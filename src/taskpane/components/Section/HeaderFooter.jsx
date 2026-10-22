@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { Button, Input, Field } from "@fluentui/react-components";
 import { setReportHeader, setReportFooter } from "./utils/header-footer-utils";
-import { StepBody, Hint, SubHeading, Group, Actions, Status } from "../ui/StepUI";
+import { StepBody, SubHeading, Group, Actions, Status, GuideSteps } from "../ui/StepUI";
 
 /* global Word */
 
@@ -54,10 +54,16 @@ export default function HeaderFooter() {
 
   return (
     <StepBody>
-      <Hint>
-        Shown from the Title Page onward; the cover pages stay without a header or footer. Click
-        again any time to change the text.
-      </Hint>
+      <GuideSteps
+        steps={[
+          <>In <b>Header</b>, type your name and your FYP title (shorten it if it is long).</>,
+          <>Click <b>Set Header</b>.</>,
+          <>In <b>Footer</b>, type your subject code.</>,
+          <>Click <b>Set Footer</b>. &quot;Page X of Y&quot; is added on the right by itself.</>,
+          <>Need to change something? Edit the box and click the button again.</>,
+        ]}
+        note="The header and footer start from the Title Page. The cover pages stay without them."
+      />
 
       <Group>
         <SubHeading>Header</SubHeading>

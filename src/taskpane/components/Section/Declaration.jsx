@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { Button, Input, Field } from "@fluentui/react-components";
-import { StepBody, Hint, Actions, Status } from "../ui/StepUI";
+import { StepBody, Actions, Status, GuideSteps } from "../ui/StepUI";
 
 /* global Word */
 
@@ -22,9 +22,29 @@ const DEFAULT_HEADING_TEXT = "DECLARATION";
 const DEFAULT_CONTENT_TEXT =
   "I hereby declare that the work in this thesis is my own except for quotations and summaries which have been duly acknowledged.";
 
+const MONTHS = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
+];
+
+// Today as "YYYY-MM-DD" (local time), the value a date picker uses.
+function todayValue() {
+  const d = new Date();
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+// "2026-10-22" -> "22 October 2026" (the format written on the page).
+function formatDate(value) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value || "");
+  if (!m) return "";
+  return `${Number(m[3])} ${MONTHS[Number(m[2]) - 1]} ${m[1]}`;
+}
+
 export default function Declaration() {
 
-  const [date, setDate] = useState("");
+  // Starts on today's date, so the page always gets a date.
+  const [date, setDate] = useState(todayValue);
   const [name, setName] = useState("");
   const [studentId, setStudentId] = useState("");
   const [status, setStatus] = useState("");
@@ -54,7 +74,7 @@ export default function Declaration() {
     await context.sync();
     if (titlePageEnd.isNullObject) {
       throw new Error(
-        "Set up the Title Page first (click Set Format on the Title Page). The Declaration goes on the page after it."
+        "Set up the Title Page first (click Generate Title Page in step 2). The Declaration goes on the page after it."
       );
     }
 
@@ -202,7 +222,7 @@ export default function Declaration() {
       await Word.run(async (context) => {
         const created = await ensureSkeleton(context);
 
-        await fillField(context, "bmDeclDate", date, { bold: false, allCaps: false });
+        await fillField(context, "bmDeclDate", formatDate(date), { bold: false, allCaps: false });
         await fillField(context, "bmDeclName", name, { bold: false, allCaps: true });
         await fillField(context, "bmDeclId", studentId, { bold: false, allCaps: false });
 
@@ -213,7 +233,7 @@ export default function Declaration() {
         );
       });
 
-      setDate("");
+      setDate(todayValue());
       setName("");
       setStudentId("");
     } catch (err) {
@@ -227,14 +247,27 @@ export default function Declaration() {
 
   return (
     <StepBody>
-      <Hint>
-        Creates the Declaration page right after the Title Page, centred on the page. The heading
-        and declaration sentence are added for you - just fill in the three details.
-      </Hint>
+      <GuideSteps
+        steps={[
+          <>Check the <b>Date</b> - it is set to today. Click it to choose another day.</>,
+          <>Type your <b>Name</b> and <b>Student ID</b>.</>,
+          <>Click <b>Set Format</b>. The Declaration page is added after the Title Page.</>,
+          <>Made a mistake? Fix the box and click <b>Set Format</b> again.</>,
+        ]}
+        note="Do step 2 (Title Page) first - the Declaration goes on the page after it."
+      />
 
-      <Field label="Date">
-        <Input placeholder="e.g. 29 May 2025" value={date} onChange={(_, data) => setDate(data.value)} />
+      <Field
+        label="Date"
+        hint={date ? `Shows on the page as: ${formatDate(date)}` : "Pick a date"}
+      >
+        <Input type="date" value={date} onChange={(_, data) => setDate(data.value)} />
       </Field>
+      <Actions>
+        <Button size="small" appearance="subtle" onClick={() => setDate(todayValue())}>
+          Use today's date
+        </Button>
+      </Actions>
       <Field label="Name">
         <Input
           placeholder="e.g. Arena bt Che Kasim"

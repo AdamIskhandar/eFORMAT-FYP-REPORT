@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { makeStyles, tokens, Button, Text } from "@fluentui/react-components";
-import { StepBody, Hint, Actions, Status } from "../ui/StepUI";
+import { StepBody, Actions, Status, GuideSteps } from "../ui/StepUI";
 
 /* global Word */
 
@@ -31,14 +31,42 @@ const useStyles = makeStyles({
     fontSize: "12px",
     lineHeight: "1.5", // Simulates 1.5 spacing visually
     color: tokens.colorNeutralForeground2,
+    textIndent: "24px", // first-line indent, like the page
   },
 });
 
 const MM_TO_PT = 2.834645669;
 const HEADING_TOP_SPACING_MM = 0;
 
-const SAMPLE_PARAGRAPHS =
-  "First and foremost, I would like to express my sincere gratitude to my supervisor, Prof. Dr. [Supervisor Name], for the continuous guidance, encouragement, and support throughout the course of this research. \n I would also like to thank the academic and administrative staff of the [Faculty/Institute Name] for their technical assistance and for providing the facilities needed to complete this study. \n My appreciation also goes to my fellow labmates and friends at [Research Group/Lab Name] for their helpful suggestions and moral support during this journey. \n I gratefully acknowledge the financial support provided through [Grant Name/Number] and [Scholarship Name], which made this research possible. \n Finally, I would like to express my deepest appreciation to my family for their unwavering support, patience, and encouragement throughout my studies.";
+// First-line indent for the Acknowledgements paragraphs: 0.5 inch
+// (1.27 cm), Word's standard paragraph indent. The FIRST paragraph under
+// the heading has no indent; every paragraph after it is indented. Because
+// it is a paragraph setting, pressing Enter in an indented paragraph starts
+// a new paragraph that is indented too.
+const FIRST_LINE_INDENT_PT = 36;
+
+const SAMPLE_LIST = [
+  "First and foremost, I would like to express my sincere gratitude to my supervisor, Prof. Dr. [Supervisor Name], for the continuous guidance, encouragement, and support throughout the course of this research.",
+  "I would also like to thank the academic and administrative staff of the [Faculty/Institute Name] for their technical assistance and for providing the facilities needed to complete this study.",
+  "My appreciation also goes to my fellow labmates and friends at [Research Group/Lab Name] for their helpful suggestions and moral support during this journey.",
+  "I gratefully acknowledge the financial support provided through [Grant Name/Number] and [Scholarship Name], which made this research possible.",
+  "Finally, I would like to express my deepest appreciation to my family for their unwavering support, patience, and encouragement throughout my studies.",
+];
+
+// Body paragraph format: Arial 12, justified, 1.5 spacing, first-line
+// indent (none for the first paragraph).
+function applyBodyFormat(paragraph, isFirst) {
+  paragraph.font.name = "Arial";
+  paragraph.font.size = 12;
+  paragraph.font.bold = false;
+  paragraph.font.allCaps = false;
+  paragraph.alignment = "Justified";
+  paragraph.spaceBefore = 0;
+  paragraph.spaceAfter = 0;
+  paragraph.lineSpacing = 18; // 1.5 lines for Arial 12pt
+  paragraph.leftIndent = 0;
+  paragraph.firstLineIndent = isFirst ? 0 : FIRST_LINE_INDENT_PT;
+}
 
 async function ensureSkeleton(context) {
   const marker = context.document.getBookmarkRangeOrNullObject("bmAckHead");
@@ -81,17 +109,17 @@ async function ensureSkeleton(context) {
   heading.lineSpacing = 12;
   heading.getRange().insertBookmark("bmAckHead");
 
-  // 2. Insert Content
-  const content = context.document.body.insertParagraph(SAMPLE_PARAGRAPHS, Word.InsertLocation.end);
-  content.font.name = "Arial";
-  content.font.size = 12;
-  content.font.bold = false;
-  content.font.allCaps = false;
-  content.alignment = "Justified";
-  content.spaceBefore = 0;
-  content.spaceAfter = 0;
-  content.lineSpacing = 18; // Double-spacing standard (1.5 line equivalent for Arial 12pt)
-  content.getRange().insertBookmark("bmAckCont");
+  // 2. Insert Content - one Word paragraph per sample paragraph, each
+  //    the first one flush left, the rest with a first-line indent.
+  let first = null;
+  let last = null;
+  SAMPLE_LIST.forEach((text) => {
+    const paragraph = context.document.body.insertParagraph(text, Word.InsertLocation.end);
+    applyBodyFormat(paragraph, !first);
+    if (!first) first = paragraph;
+    last = paragraph;
+  });
+  first.getRange().expandTo(last.getRange()).insertBookmark("bmAckCont");
 
   await context.sync();
 
@@ -118,39 +146,42 @@ function Acknowledgements() {
   const styles = useStyles();
   const [status, setStatus] = useState(null);
 
-  async function fillField(context, bookmark, text, { bold, allCaps }) {
-    if (!text.trim()) return;
-
-    const bookmarkRange = context.document.getBookmarkRangeOrNullObject(bookmark);
+  // Page already there: re-apply the format to the heading and to every
+  // paragraph under it on the Acknowledgements page - the student's own
+  // text is kept, and paragraphs they added get the indent as well.
+  async function reformatExisting(context) {
+    const headRange = context.document.getBookmarkRangeOrNullObject("bmAckHead");
+    headRange.load("isNullObject");
     await context.sync();
-    if (bookmarkRange.isNullObject) return;
+    if (headRange.isNullObject) return 0;
 
-    bookmarkRange.insertText(text.trim(), Word.InsertLocation.replace);
+    const heading = headRange.paragraphs.getFirst();
+    heading.font.name = "Arial";
+    heading.alignment = "Centered";
+    heading.font.size = 12;
+    heading.font.bold = true;
+    heading.font.allCaps = true;
+    heading.spaceBefore = HEADING_TOP_SPACING_MM * MM_TO_PT;
+    heading.spaceAfter = 18;
+    heading.lineSpacing = 12;
+    heading.firstLineIndent = 0;
+
+    // The Acknowledgements page is its own Word section.
+    const paragraphs = headRange.sections.getFirst().body.paragraphs;
+    paragraphs.load("items/text");
     await context.sync();
 
-    if (bookmark === "bmAckHead") {
-      const updatedRange = context.document.getBookmarkRangeOrNullObject(bookmark);
-      updatedRange.font.name = "Arial";
-      updatedRange.alignment = "Centered";
-      updatedRange.font.size = 12;
-      updatedRange.font.bold = true;
-      updatedRange.font.allCaps = true;
-      updatedRange.spaceBefore = HEADING_TOP_SPACING_MM * MM_TO_PT;
-      updatedRange.spaceAfter = 18;
-      updatedRange.lineSpacing = 12;
-      await context.sync();
-    } else {
-      const currentParagraph = context.document.getBookmarkRangeOrNullObject(bookmark);
-      currentParagraph.font.name = "Arial";
-      currentParagraph.font.size = 12;
-      currentParagraph.font.bold = false;
-      currentParagraph.font.allCaps = false;
-      currentParagraph.alignment = "Justified";
-      currentParagraph.spaceBefore = 0;
-      currentParagraph.spaceAfter = 0;
-      currentParagraph.lineSpacing = 18;
-      await context.sync();
-    }
+    const headIndex = paragraphs.items.findIndex(
+      (p) => p.text.trim().toUpperCase() === "ACKNOWLEDGEMENTS"
+    );
+    let count = 0;
+    paragraphs.items.slice(headIndex + 1).forEach((p) => {
+      if (!p.text.trim()) return; // leave empty lines alone
+      applyBodyFormat(p, count === 0); // first paragraph: no indent
+      count++;
+    });
+    await context.sync();
+    return count;
   }
 
   async function handleSetFormat() {
@@ -158,15 +189,13 @@ function Acknowledgements() {
     try {
       await Word.run(async (context) => {
         const created = await ensureSkeleton(context);
-
-        await fillField(context, "bmAckHead", "ACKNOWLEDGEMENTS", { bold: true, allCaps: true });
-        await fillField(context, "bmAckCont", SAMPLE_PARAGRAPHS, { bold: false, allCaps: false });
+        const count = created ? SAMPLE_LIST.length : await reformatExisting(context);
 
         setStatus({
           type: "success",
           message: created
-            ? "Acknowledgements page inserted on a separate page."
-            : "Acknowledgements page updated successfully.",
+            ? "Acknowledgements page inserted on a separate page. Paragraphs after the first one start with an indent."
+            : `Acknowledgements format applied to ${count} paragraph${count === 1 ? "" : "s"} (with indent). Your text was kept.`,
         });
       });
     } catch (err) {
@@ -180,15 +209,27 @@ function Acknowledgements() {
 
   return (
     <StepBody>
-      <Hint>
-        Adds the Acknowledgements page with this sample text, formatted to the UPTM style. Replace
-        the [bracketed] parts with your own details in Word.
-      </Hint>
+      <GuideSteps
+        steps={[
+          <>Click <b>Set Format</b>. The Acknowledgements page is added with sample text.</>,
+          <>In Word, replace the sample text and the [bracketed] parts with your own words.</>,
+          <>Press Enter to start a new paragraph - it is indented for you.</>,
+          <>When you finish writing, click <b>Set Format</b> again to tidy the format. Your text is kept.</>,
+        ]}
+      />
 
       <Text className={styles.previewLabel}>Preview</Text>
       <div className={styles.previewBox}>
         <Text className={styles.previewHeading}>ACKNOWLEDGEMENTS</Text>
-        <Text className={styles.previewParagraph}>{SAMPLE_PARAGRAPHS}</Text>
+        {SAMPLE_LIST.map((text, i) => (
+          <Text
+            key={text}
+            className={styles.previewParagraph}
+            style={i === 0 ? { textIndent: 0 } : undefined}
+          >
+            {text}
+          </Text>
+        ))}
       </div>
 
       <Actions>

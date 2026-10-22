@@ -8,7 +8,9 @@
  * level 1 = chapter / Appendix / References  (Heading 1: centered, Arial 18)
  * level 2 = section, e.g. 1.1                (Heading 2: left,     Arial 14)
  * level 3 = subsection, e.g. 1.3.1           (Heading 3: indented, Arial 12)
- * level 4 = sub-subsection, e.g. 3.5.1.1     (Heading 4: indented, Arial 12 italic)
+ * level 4 = lettered, e.g. a. b. c.           (Heading 4) - under a 3-digit
+ *           heading. Numbers stop at 3 digits (3.5.1); level 4 is never
+ *           3.5.1.1, and it is NOT listed in the Table of Contents.
  *
  * The heading text must start with its number ("3.3 Phases ...") - the
  * List of Figures/Tables numbering reads the number from the heading text.
@@ -71,8 +73,8 @@ export const REPORT_STRUCTURE = [
   entry(3, "3.4.4 System Requirement", WRITE),
   entry(2, "3.5 Analysis"),
   entry(3, "3.5.1 Data Gathering Analysis"),
-  entry(4, "3.5.1.1 Questionnaire Analysis", WRITE),
-  entry(4, "3.5.1.2 Interview Analysis", WRITE),
+  entry(4, "a.\tQuestionnaire Analysis", WRITE),
+  entry(4, "b.\tInterview Analysis", WRITE),
   entry(3, "3.5.2 Use Case Model", WRITE),
   entry(3, "3.5.3 Flowchart", WRITE),
   entry(3, "3.5.4 BPNM (Business Process Modelling Notation)", WRITE),
